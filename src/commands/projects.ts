@@ -1,22 +1,13 @@
 import { requireVercelToken } from "../auth/vercelCliAuth.js"
 import { VercelApi, VercelDeployment } from "../api/vercelApi.js"
+import { confirmAction, ProjectOption } from "../ui/prompts.js"
 import {
-  promptTeam,
-  promptProject,
-  promptProjectsMultiSelect,
-  confirmAction,
-  TeamOption,
-  ProjectOption,
-} from "../ui/prompts.js"
-import {
-  renderProjectsList,
   formatProjectOption,
   ProjectWithMetadata,
 } from "../ui/renderProjects.js"
+import { logError, getErrorLogPath } from "../utils/errorLogger.js"
 import chalk from "chalk"
 import open from "open"
-
-type Action = "open" | "delete" | "exit"
 
 /**
  * Main projects command wizard
@@ -29,153 +20,194 @@ export async function projectsCommand(providedToken?: string) {
     const token = requireVercelToken(providedToken)
     const api = new VercelApi(token)
 
-    // Step 2: Fetch teams and prompt for selection
-    console.log(chalk.blue("📋 Fetching teams..."))
+    // Step 2: Fetch user info and teams for scope detection
+    console.log(chalk.blue("📋 Fetching user information..."))
+    const user = await api.getCurrentUser()
     const teams = await api.listTeams()
-    const teamOptions: TeamOption[] = teams.map((team) => ({
-      name: team.name,
-      value: team.id,
-    }))
+    const teamsMap = new Map(teams.map((t) => [t.id, t]))
 
-    const selectedTeamId = await promptTeam(teamOptions)
-    const teamName =
-      selectedTeamId === null
-        ? "Personal"
-        : teams.find((t) => t.id === selectedTeamId)?.name || "Unknown"
-
-    console.log(chalk.green(`✓ Using scope: ${teamName}\n`))
-
-    // Step 3: Fetch projects
+    // Step 3: Fetch projects (token scope determines which projects are shown)
     console.log(chalk.blue("📦 Fetching projects..."))
-    const projects = await api.listProjects(selectedTeamId)
+    let projects = await api.listProjects(null)
 
     if (projects.length === 0) {
-      console.log(chalk.yellow("No projects found in this scope."))
+      console.log(chalk.yellow("No projects found."))
       return
     }
 
-    console.log(chalk.green(`✓ Found ${projects.length} project(s)\n`))
+    // Determine scope from projects (check accountId against teams)
+    let scopeSlug: string = user.username
+    let scopeTeamId: string | null = null
+    let scopeName: string = "Personal"
 
-    // Sort projects by last updated (newest first) before pagination
+    // Check if projects belong to a team
+    if (projects.length > 0 && projects[0].accountId) {
+      const matchingTeam = teams.find((t) => t.id === projects[0].accountId)
+      if (matchingTeam) {
+        scopeSlug = matchingTeam.slug
+        scopeTeamId = matchingTeam.id
+        scopeName = matchingTeam.name
+      }
+    }
+
+    console.log(chalk.green(`✓ Using scope: ${scopeName}\n`))
+
+    // Sort projects by last updated (newest first)
     projects.sort((a, b) => b.updatedAt - a.updatedAt)
 
-    // Step 4: Fetch deployments gradually (lazy loading per page)
     const pageSize = 10
-    const latestDeployments = new Map<string, VercelDeployment | null>()
 
-    /**
-     * Fetch deployments for a specific page of projects
-     */
-    async function fetchDeploymentsForPage(
-      pageProjects: typeof projects,
-      pageNum: number
-    ): Promise<void> {
-      const pageStart = pageNum * pageSize
-      const pageEnd = Math.min(pageStart + pageSize, projects.length)
-      const pageProjectIds = projects.slice(pageStart, pageEnd).map((p) => p.id)
+    // Main loop - return to selection after actions
+    let continueLoop = true
+    while (continueLoop) {
+      // Fetch deployments gradually (lazy loading per page)
+      const latestDeployments = new Map<string, VercelDeployment | null>()
 
-      // Fetch deployments for this page in parallel
-      await Promise.all(
-        pageProjectIds.map(async (projectId) => {
-          try {
-            const projectDeployments = await api.listDeployments({
-              teamId: selectedTeamId,
-              projectId,
-              limit: 1,
-            })
-            latestDeployments.set(projectId, projectDeployments[0] || null)
-          } catch (error) {
-            // If project has no deployments or error, set to null
-            latestDeployments.set(projectId, null)
-          }
+      /**
+       * Fetch deployments for a specific page of projects
+       */
+      async function fetchDeploymentsForPage(
+        pageProjects: typeof projects,
+        pageNum: number
+      ): Promise<void> {
+        const pageStart = pageNum * pageSize
+        const pageEnd = Math.min(pageStart + pageSize, projects.length)
+        const pageProjectIds = projects
+          .slice(pageStart, pageEnd)
+          .map((p) => p.id)
+
+        // Fetch deployments for this page in parallel
+        await Promise.all(
+          pageProjectIds.map(async (projectId) => {
+            try {
+              const projectDeployments = await api.listDeployments({
+                teamId: scopeTeamId,
+                projectId,
+                limit: 1,
+              })
+              latestDeployments.set(projectId, projectDeployments[0] || null)
+            } catch (error) {
+              // If project has no deployments or error, set to null
+              // Only log non-404 errors (404 is expected for projects without deployments)
+              const errorMessage =
+                error instanceof Error ? error.message : String(error)
+              if (
+                !errorMessage.includes("404") &&
+                !errorMessage.includes("Not Found")
+              ) {
+                logError(
+                  error instanceof Error ? error : new Error(errorMessage),
+                  {
+                    operation: "fetchDeployments",
+                    projectId: projectId,
+                    teamId: scopeTeamId,
+                  }
+                )
+              }
+              latestDeployments.set(projectId, null)
+            }
+          })
+        )
+      }
+
+      // Fetch deployments for first page immediately (for initial display)
+      console.log(chalk.blue("🚀 Fetching deployment data for first page..."))
+      await fetchDeploymentsForPage(projects, 0)
+      const firstPageCount = Math.min(pageSize, projects.length)
+      console.log(
+        chalk.green(
+          `✓ Fetched deployment data for first ${firstPageCount} project(s)\n`
+        )
+      )
+
+      // Combine projects with deployment metadata
+      let projectsWithMetadata: ProjectWithMetadata[] = projects.map(
+        (project) => ({
+          ...project,
+          lastDeployment: latestDeployments.get(project.id) || null,
         })
       )
-    }
 
-    // Fetch deployments for first page immediately (for initial display)
-    console.log(chalk.blue("🚀 Fetching deployment data for first page..."))
-    await fetchDeploymentsForPage(projects, 0)
-    const firstPageCount = Math.min(pageSize, projects.length)
-    console.log(
-      chalk.green(
-        `✓ Fetched deployment data for first ${firstPageCount} project(s)\n`
+      // Fetch remaining deployments in background
+      const totalPages = Math.ceil(projects.length / pageSize)
+      if (totalPages > 1) {
+        const backgroundFetch = (async () => {
+          for (let pageNum = 1; pageNum < totalPages; pageNum++) {
+            await fetchDeploymentsForPage(projects, pageNum)
+            projectsWithMetadata = projects.map((project) => ({
+              ...project,
+              lastDeployment: latestDeployments.get(project.id) || null,
+            }))
+          }
+        })().catch(() => {
+          // Silently handle background fetch errors
+        })
+        void backgroundFetch
+      }
+
+      // Show interactive select interface
+      const projectOptions: ProjectOption[] = projectsWithMetadata.map(
+        (project) => ({
+          name: formatProjectOption(project),
+          value: project.id,
+          description: project.name,
+        })
       )
-    )
 
-    // Combine projects with deployment metadata
-    // First page has data, others will show "never deployed" until fetched
-    let projectsWithMetadata: ProjectWithMetadata[] = projects.map(
-      (project) => ({
-        ...project,
-        lastDeployment: latestDeployments.get(project.id) || null,
-      })
-    )
+      const { promptProjectsWithActions } = await import("../ui/prompts.js")
+      const { projectIds, action } = await promptProjectsWithActions(
+        projectOptions,
+        pageSize
+      )
 
-    // Fetch remaining deployments in background with progress indication
-    const totalPages = Math.ceil(projects.length / pageSize)
-    if (totalPages > 1) {
-      // Start background fetch but don't block
-      const backgroundFetch = (async () => {
-        for (let pageNum = 1; pageNum < totalPages; pageNum++) {
-          await fetchDeploymentsForPage(projects, pageNum)
-          // Update the projectsWithMetadata array with newly fetched data
-          // (Note: UI won't update dynamically, but data will be ready)
-          projectsWithMetadata = projects.map((project) => ({
-            ...project,
-            lastDeployment: latestDeployments.get(project.id) || null,
-          }))
+      if (projectIds.length === 0 || !action) {
+        // Exit gracefully
+        continueLoop = false
+        break
+      }
+
+      if (action === "open") {
+        await handleOpenActionFromSelection(
+          projectsWithMetadata,
+          projectIds,
+          scopeSlug
+        )
+        // Return to selection after opening
+      } else if (action === "delete") {
+        const result = await handleDeleteActionFromSelection(
+          projectsWithMetadata,
+          projectIds,
+          api,
+          scopeTeamId,
+          scopeName
+        )
+        // Return to selection after delete (whether confirmed or cancelled)
+        // Re-fetch projects if any were deleted
+        if (result.deletedCount > 0) {
+          projects = await api.listProjects(scopeTeamId)
+          if (projects.length === 0) {
+            console.log(chalk.yellow("No projects remaining."))
+            continueLoop = false
+            break
+          }
+          projects.sort((a, b) => b.updatedAt - a.updatedAt)
         }
-      })().catch(() => {
-        // Silently handle background fetch errors
-      })
-
-      // Don't await - let it run in background
-      // The data will be available if user navigates to later pages
-      void backgroundFetch
-    }
-
-    // Step 5: Show interactive select interface (no full list display)
-    const projectOptions: ProjectOption[] = projectsWithMetadata.map(
-      (project) => ({
-        name: formatProjectOption(project),
-        value: project.id,
-        description: project.name,
-      })
-    )
-
-    const { promptProjectsWithActions } = await import("../ui/prompts.js")
-    const { projectIds, action } = await promptProjectsWithActions(
-      projectOptions,
-      pageSize
-    )
-
-    if (projectIds.length === 0 || !action) {
-      console.log(chalk.gray("No action selected."))
-      return
-    }
-
-    if (action === "open") {
-      await handleOpenActionFromSelection(
-        projectsWithMetadata,
-        projectIds,
-        selectedTeamId,
-        teamName
-      )
-    } else if (action === "delete") {
-      await handleDeleteActionFromSelection(
-        projectsWithMetadata,
-        projectIds,
-        api,
-        selectedTeamId,
-        teamName
-      )
+      }
     }
   } catch (error) {
+    // Log error to file
+    logError(error instanceof Error ? error : new Error(String(error)), {
+      operation: "projectsCommand",
+    })
+
     if (error instanceof Error) {
       console.error(chalk.red(`\n❌ Error: ${error.message}`))
     } else {
       console.error(chalk.red(`\n❌ Unexpected error: ${error}`))
     }
+    console.error(
+      chalk.yellow(`\nError details logged to: ${getErrorLogPath()}`)
+    )
     process.exit(1)
   }
 }
@@ -186,8 +218,7 @@ export async function projectsCommand(providedToken?: string) {
 async function handleOpenActionFromSelection(
   projects: ProjectWithMetadata[],
   projectIds: string[],
-  teamId: string | null,
-  teamName: string
+  scopeSlug: string
 ) {
   const selectedProjects = projects.filter((p) => projectIds.includes(p.id))
 
@@ -196,13 +227,28 @@ async function handleOpenActionFromSelection(
     return
   }
 
-  // Open each selected project
-  const scope = teamId || "~"
+  // Open each selected project using the correct scope slug
   for (const project of selectedProjects) {
-    const projectUrl = `https://vercel.com/${scope}/~/project/${project.name}`
-    console.log(chalk.blue(`\n🌐 Opening ${project.name}...`))
-    await open(projectUrl)
-    console.log(chalk.green(`✓ Opened ${projectUrl}`))
+    try {
+      const projectUrl = `https://vercel.com/${scopeSlug}/${project.name}`
+      console.log(chalk.blue(`\n🌐 Opening ${project.name}...`))
+      await open(projectUrl)
+      console.log(chalk.green(`✓ Opened ${projectUrl}`))
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      console.log(
+        chalk.red(`✗ Failed to open ${project.name}: ${errorMessage}`)
+      )
+
+      // Log error to file
+      logError(error instanceof Error ? error : new Error(errorMessage), {
+        operation: "openProject",
+        projectName: project.name,
+        projectId: project.id,
+        scopeSlug: scopeSlug,
+      })
+    }
   }
 }
 
@@ -215,12 +261,12 @@ async function handleDeleteActionFromSelection(
   api: VercelApi,
   teamId: string | null,
   teamName: string
-) {
+): Promise<{ deletedCount: number; cancelled: boolean }> {
   const selectedProjects = projects.filter((p) => projectIds.includes(p.id))
 
   if (selectedProjects.length === 0) {
     console.log(chalk.yellow("No projects selected."))
-    return
+    return { deletedCount: 0, cancelled: false }
   }
 
   // Show confirmation
@@ -231,7 +277,7 @@ async function handleDeleteActionFromSelection(
 
   if (!confirmed) {
     console.log(chalk.yellow("Deletion cancelled."))
-    return
+    return { deletedCount: 0, cancelled: true }
   }
 
   // Delete projects with progress
@@ -259,6 +305,15 @@ async function handleDeleteActionFromSelection(
       console.log(
         chalk.red(`✗ Failed to delete ${project.name}: ${errorMessage}`)
       )
+
+      // Log error to file
+      logError(error instanceof Error ? error : new Error(errorMessage), {
+        operation: "deleteProject",
+        projectName: project.name,
+        projectId: project.id,
+        teamId: teamId,
+        teamName: teamName,
+      })
     }
   }
 
@@ -272,5 +327,10 @@ async function handleDeleteActionFromSelection(
     results.failed.forEach(({ name, error }) => {
       console.log(chalk.red(`    - ${name}: ${error}`))
     })
+    console.log(
+      chalk.yellow(`\n⚠️  Errors have been logged to: ${getErrorLogPath()}`)
+    )
   }
+
+  return { deletedCount: results.success.length, cancelled: false }
 }

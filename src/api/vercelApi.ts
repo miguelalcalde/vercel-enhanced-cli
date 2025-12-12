@@ -33,6 +33,13 @@ export interface VercelDeployment {
   readyAt?: number
 }
 
+export interface VercelUser {
+  uid: string
+  email: string
+  username: string
+  name?: string
+}
+
 interface VercelApiResponse<T> {
   [key: string]: T | T[] | any
 }
@@ -115,7 +122,35 @@ export class VercelApi {
           )
         }
 
-        return (await response.json()) as T
+        // Check if response has content before parsing JSON
+        const contentType = response.headers.get("content-type") || ""
+        const contentLength = response.headers.get("content-length")
+
+        // Handle empty responses (common for DELETE requests)
+        if (
+          contentLength === "0" ||
+          response.status === 204 ||
+          (contentType && !contentType.includes("application/json"))
+        ) {
+          return undefined as T
+        }
+
+        // Try to parse JSON, but handle empty body gracefully
+        const text = await response.text()
+        if (!text || text.trim().length === 0) {
+          return undefined as T
+        }
+
+        try {
+          return JSON.parse(text) as T
+        } catch (parseError) {
+          // If JSON parsing fails but response was OK, return undefined
+          // This handles cases where API returns empty or non-JSON responses
+          if (response.ok) {
+            return undefined as T
+          }
+          throw parseError
+        }
       } catch (error) {
         // If it's a network error and we have retries left, retry
         if (
@@ -132,6 +167,14 @@ export class VercelApi {
     }
 
     throw new Error("Request failed after retries")
+  }
+
+  /**
+   * Get current user information
+   */
+  async getCurrentUser(): Promise<VercelUser> {
+    const response = await this.request<{ user: VercelUser }>("/v2/user")
+    return response.user
   }
 
   /**
