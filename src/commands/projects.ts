@@ -210,11 +210,17 @@ export async function projectsCommand(providedToken?: string) {
         break
       }
 
-      if (action === "open") {
+      if (
+        action === "open" ||
+        action === "open-settings" ||
+        action === "open-deployments" ||
+        action === "open-logs"
+      ) {
         await handleOpenActionFromSelection(
           projectsWithMetadata,
           projectIds,
-          scopeSlug
+          scopeSlug,
+          action
         )
         // Return to selection after opening
       } else if (action === "delete") {
@@ -258,11 +264,13 @@ export async function projectsCommand(providedToken?: string) {
 
 /**
  * Handle opening selected projects in the browser
+ * @param action - The type of page to open: "open", "open-settings", "open-deployments", or "open-logs"
  */
 async function handleOpenActionFromSelection(
   projects: ProjectWithMetadata[],
   projectIds: string[],
-  scopeSlug: string
+  scopeSlug: string,
+  action: "open" | "open-settings" | "open-deployments" | "open-logs" = "open"
 ) {
   const selectedProjects = projects.filter((p) => projectIds.includes(p.id))
 
@@ -271,26 +279,51 @@ async function handleOpenActionFromSelection(
     return
   }
 
+  // Determine URL suffix based on action
+  let urlSuffix = ""
+  let actionName = "project"
+  switch (action) {
+    case "open":
+      urlSuffix = ""
+      actionName = "project"
+      break
+    case "open-settings":
+      urlSuffix = "/settings"
+      actionName = "settings"
+      break
+    case "open-deployments":
+      urlSuffix = "/deployments"
+      actionName = "deployments"
+      break
+    case "open-logs":
+      urlSuffix = "/logs"
+      actionName = "logs"
+      break
+  }
+
   // Open each selected project using the correct scope slug
   for (const project of selectedProjects) {
     try {
-      const projectUrl = `https://vercel.com/${scopeSlug}/${project.name}`
-      console.log(chalk.blue(`\n🌐 Opening ${project.name}...`))
+      const projectUrl = `https://vercel.com/${scopeSlug}/${project.name}${urlSuffix}`
+      console.log(chalk.blue(`\n🌐 Opening ${project.name} ${actionName}...`))
       await open(projectUrl)
       console.log(chalk.green(`✓ Opened ${projectUrl}`))
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error)
       console.log(
-        chalk.red(`✗ Failed to open ${project.name}: ${errorMessage}`)
+        chalk.red(
+          `✗ Failed to open ${project.name} ${actionName}: ${errorMessage}`
+        )
       )
 
       // Log error to file
       logError(error instanceof Error ? error : new Error(errorMessage), {
-        operation: "openProject",
+        operation: `openProject${actionName}`,
         projectName: project.name,
         projectId: project.id,
         scopeSlug: scopeSlug,
+        action: action,
       })
     }
   }

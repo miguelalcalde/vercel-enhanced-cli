@@ -60,7 +60,16 @@ export async function promptProject(
 export async function promptProjectsWithActions(
   projects: ProjectOption[],
   pageSize: number = 10
-): Promise<{ projectIds: string[]; action: "open" | "delete" | null }> {
+): Promise<{
+  projectIds: string[]
+  action:
+    | "open"
+    | "open-settings"
+    | "open-deployments"
+    | "open-logs"
+    | "delete"
+    | null
+}> {
   // #region agent log
   fetch("http://127.0.0.1:7246/ingest/ba828ae7-af47-494c-9b58-d505a8984231", {
     method: "POST",
@@ -398,7 +407,16 @@ export async function promptProjectsWithDynamicUpdates(
   onUpdate: (callback: (projects: ProjectOption[]) => void) => void,
   allProjectsWithMetadata?: ProjectWithMetadata[],
   formatProjectOptionFn?: (project: ProjectWithMetadata) => string
-): Promise<{ projectIds: string[]; action: "open" | "delete" | null }> {
+): Promise<{
+  projectIds: string[]
+  action:
+    | "open"
+    | "open-settings"
+    | "open-deployments"
+    | "open-logs"
+    | "delete"
+    | null
+}> {
   // Check terminal capabilities
   const supportsAnsiEscapes = process.stdout.isTTY && !process.env.CI
   const supportsCursorMovement =
@@ -438,6 +456,9 @@ export async function promptProjectsWithDynamicUpdates(
     const formatProject =
       formatProjectOptionFn || ((p: ProjectWithMetadata) => p.name)
 
+    // Open menu state
+    let isOpenMenuActive = false
+
     // Ensure raw mode
     if (!wasRawMode) {
       process.stdin.setRawMode(true)
@@ -447,6 +468,28 @@ export async function promptProjectsWithDynamicUpdates(
     const render = () => {
       // Clear screen and move cursor to top
       process.stdout.write("\x1b[2J\x1b[H")
+
+      // Show open menu if active
+      if (isOpenMenuActive) {
+        const selectedProjectName =
+          selected.size > 0
+            ? projects.find((p) => selected.has(p.value))?.description ||
+              "selected project(s)"
+            : projects.length > 0
+            ? projects[cursorIndex].description || "project"
+            : "project"
+        process.stdout.write(
+          chalk.bold.cyan(`Open menu for: ${selectedProjectName}\n`)
+        )
+        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+        process.stdout.write(chalk.cyan("  o") + " - Open project\n")
+        process.stdout.write(chalk.cyan("  e") + " - Open settings\n")
+        process.stdout.write(chalk.cyan("  p") + " - Open deployments\n")
+        process.stdout.write(chalk.cyan("  l") + " - Open logs\n")
+        process.stdout.write(chalk.gray("  ESC - Cancel\n"))
+        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+        return
+      }
 
       // Show search input if in search mode
       if (isSearching) {
@@ -664,8 +707,9 @@ export async function promptProjectsWithDynamicUpdates(
       // Combine with any existing escape sequence
       const fullData = escapeSequence + data
 
-      // Check for complete arrow key sequences
+      // Check for complete arrow key sequences (ignore when open menu is active)
       if (
+        !isOpenMenuActive &&
         fullData.length >= 3 &&
         fullData[0] === "\x1b" &&
         fullData[1] === "["
@@ -699,7 +743,11 @@ export async function promptProjectsWithDynamicUpdates(
           // Invalid sequence, reset
           escapeSequence = ""
         }
-      } else if (fullData.length === 1 && fullData[0] === "\x1b") {
+      } else if (
+        !isOpenMenuActive &&
+        fullData.length === 1 &&
+        fullData[0] === "\x1b"
+      ) {
         // Just started escape sequence
         escapeSequence = fullData
         return
@@ -808,8 +856,16 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle 'o' for open - use cursor position if nothing selected
-      if (data === "o") {
+      // Handle open menu mode
+      if (isOpenMenuActive) {
+        // Handle ESC to cancel
+        if (data === "\x1b") {
+          isOpenMenuActive = false
+          render()
+          return
+        }
+
+        // Handle action keys
         const projectToOpen =
           selected.size > 0
             ? Array.from(selected)
@@ -817,14 +873,55 @@ export async function promptProjectsWithDynamicUpdates(
             ? [projects[cursorIndex].value]
             : []
 
+        let action:
+          | "open"
+          | "open-settings"
+          | "open-deployments"
+          | "open-logs"
+          | null = null
+
+        if (data === "o") {
+          action = "open"
+        } else if (data === "e") {
+          action = "open-settings"
+        } else if (data === "p") {
+          action = "open-deployments"
+        } else if (data === "l") {
+          action = "open-logs"
+        } else {
+          // Invalid key, ignore
+          return
+        }
+
+        // Resolve with the selected action
         process.stdin.removeListener("data", handleData)
         process.stdin.setRawMode(wasRawMode || false)
         process.stdin.pause()
         process.stdout.write("\x1b[2J\x1b[H")
         resolve({
           projectIds: projectToOpen,
-          action: "open",
+          action,
         })
+        return
+      }
+
+      // Handle 'o' to open projects
+      if (data === "o") {
+        // If multiple projects are selected, open them all directly
+        if (selected.size > 1) {
+          process.stdin.removeListener("data", handleData)
+          process.stdin.setRawMode(wasRawMode || false)
+          process.stdin.pause()
+          process.stdout.write("\x1b[2J\x1b[H")
+          resolve({
+            projectIds: Array.from(selected),
+            action: "open",
+          })
+          return
+        }
+        // Otherwise, show open menu for single selection or cursor position
+        isOpenMenuActive = true
+        render()
         return
       }
 
