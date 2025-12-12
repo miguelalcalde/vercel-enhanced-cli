@@ -117,18 +117,20 @@ export async function promptProjectsWithActions(
           "↑↓ navigate  space select  a all  i invert  d delete  o open\n"
         )
       )
-      process.stdout.write(chalk.gray("-".repeat(75)) + "\n")
+      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
       // Add table headers
       process.stdout.write(
         chalk.gray(
           "    " +
-            "Name".padEnd(30) +
-            "Updated".padEnd(12) +
-            "Last Deployment".padEnd(20) +
+            "Name".padEnd(35) +
+            "Created".padEnd(10) +
+            "Updated".padEnd(10) +
+            "Last Deploy".padEnd(20) +
+            "Deploy Creator".padEnd(15) +
             "\n"
         )
       )
-      process.stdout.write(chalk.gray("-".repeat(75)) + "\n")
+      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
 
       const endIndex = Math.min(startIndex + pageSize, projects.length)
       const visibleProjects = projects.slice(startIndex, endIndex)
@@ -440,18 +442,20 @@ export async function promptProjectsWithDynamicUpdates(
           "↑↓ navigate  space select  a all  i invert  d delete  o open\n"
         )
       )
-      process.stdout.write(chalk.gray("-".repeat(75)) + "\n")
+      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
       // Add table headers
       process.stdout.write(
         chalk.gray(
           "    " +
-            "Name".padEnd(30) +
-            "Updated".padEnd(12) +
-            "Last Deployment".padEnd(20) +
+            "Name".padEnd(35) +
+            "Created".padEnd(10) +
+            "Updated".padEnd(10) +
+            "Last Deploy".padEnd(20) +
+            "Deploy Creator".padEnd(15) +
             "\n"
         )
       )
-      process.stdout.write(chalk.gray("-".repeat(75)) + "\n")
+      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
 
       const endIndex = Math.min(startIndex + pageSize, projects.length)
       const visibleProjects = projects.slice(startIndex, endIndex)

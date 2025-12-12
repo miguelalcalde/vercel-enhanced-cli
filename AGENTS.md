@@ -62,6 +62,7 @@ This file provides context and guidelines for AI agents to interact with this re
 This repository contains **Vercel Enhanced CLI** (`vercelx`), an interactive command-line tool for managing Vercel projects with batch actions. The tool provides a user-friendly interface for browsing projects, viewing extended metadata (last updated, last deployment), opening project URLs, and performing batch deletions.
 
 AI agents working on this codebase should:
+
 - Understand the CLI-first architecture and terminal UX patterns
 - Follow TypeScript strict mode conventions
 - Maintain consistency with existing code patterns
@@ -111,6 +112,7 @@ The project follows a modular CLI architecture:
 ### Code Style
 
 - **Naming Conventions**:
+
   - Functions: `camelCase` (e.g., `fetchProjects`, `handleDeleteAction`)
   - Types/Interfaces: `PascalCase` (e.g., `VercelProject`, `ProjectOption`)
   - Constants: `UPPER_SNAKE_CASE` (e.g., `VERCEL_API_BASE`)
@@ -158,16 +160,17 @@ src/
 - **Format**: JSON lines format with timestamp, error message, stack trace, and context
 - **Context**: Include operation, project details, and relevant metadata
 - **Example**:
+
   ```typescript
   import { logError } from "../utils/errorLogger.js"
-  
+
   try {
     // Operation that might fail
   } catch (error) {
     logError(error, {
       operation: "deleteProject",
       projectId: project.id,
-      projectName: project.name
+      projectName: project.name,
     })
     console.error(chalk.red(`❌ Error: ${error.message}`))
   }
@@ -206,12 +209,14 @@ src/
 ### Dependencies
 
 **Production**:
+
 - `commander`: CLI framework
 - `@inquirer/prompts`: Interactive terminal prompts
 - `chalk`: Terminal colors
 - `open`: Open URLs in browser
 
 **Development**:
+
 - `typescript`: Type checking and compilation
 - `tsup`: Fast TypeScript bundler
 - `@types/node`: Node.js type definitions
@@ -245,16 +250,19 @@ src/
 ### UI/UX Guidelines
 
 1. **Progress Indicators**: Show loading states for async operations
+
    ```typescript
    console.log(chalk.blue("📦 Fetching projects..."))
    ```
 
 2. **Success Messages**: Use green checkmarks for completed actions
+
    ```typescript
    console.log(chalk.green(`✓ Found ${projects.length} project(s)`))
    ```
 
 3. **Error Messages**: Use red with clear descriptions
+
    ```typescript
    console.error(chalk.red(`❌ Error: ${error.message}`))
    ```
@@ -279,11 +287,13 @@ src/
 ### Debugging and Troubleshooting
 
 1. **Error Logs**: Check `.vercelx-errors.log` for detailed error information
+
    - JSON lines format for easy parsing
    - Contains stack traces and operation context
    - Use `clearErrorLog()` to reset the log file
 
 2. **Debug Mode**: Add verbose logging when debugging
+
    ```typescript
    if (process.env.DEBUG) {
      console.log(chalk.gray(`[DEBUG] ${message}`))
@@ -291,6 +301,7 @@ src/
    ```
 
 3. **API Response Inspection**: Log raw API responses when troubleshooting
+
    ```typescript
    const response = await fetch(url)
    if (!response.ok) {
@@ -311,6 +322,7 @@ src/
 **When to use**: Building new commands, improving terminal UX, adding interactive features.
 
 **Responsibilities**:
+
 - Design intuitive CLI interfaces
 - Implement consistent command patterns
 - Handle user input validation
@@ -318,6 +330,7 @@ src/
 - Ensure cross-platform compatibility
 
 **Example tasks**:
+
 - Add a new `vercelx deployments` command
 - Improve pagination UX in project selection
 - Add progress bars for long-running operations
@@ -327,6 +340,7 @@ src/
 **When to use**: Working with Vercel API, adding new endpoints, optimizing data fetching.
 
 **Responsibilities**:
+
 - Maintain typed API client interfaces
 - Implement efficient data fetching strategies
 - Handle API errors and rate limiting
@@ -334,6 +348,7 @@ src/
 - Ensure data consistency
 
 **Example tasks**:
+
 - Add support for Vercel domains API
 - Implement caching for frequently accessed data
 - Add retry logic for failed API requests
@@ -343,6 +358,7 @@ src/
 **When to use**: Reviewing pull requests, ensuring code quality, identifying security issues.
 
 **Responsibilities**:
+
 - Verify TypeScript strict mode compliance
 - Check error handling patterns
 - Ensure authentication security
@@ -350,6 +366,7 @@ src/
 - Review API response handling
 
 **Example tasks**:
+
 - Review new command implementation
 - Check for potential security vulnerabilities
 - Ensure proper error handling in new features
@@ -359,6 +376,7 @@ src/
 **When to use**: Investigating bugs, improving error handling, adding diagnostic capabilities.
 
 **Responsibilities**:
+
 - Implement comprehensive error logging
 - Add debug mode features
 - Trace execution flow
@@ -366,6 +384,7 @@ src/
 - Improve error messages and recovery
 
 **Example tasks**:
+
 - Debug API rate limiting issues
 - Add verbose logging for troubleshooting
 - Implement retry logic for failed operations
@@ -451,9 +470,9 @@ try {
     projectId,
     projectName,
     teamId,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   })
-  
+
   // Show user-friendly error
   console.error(chalk.red(`❌ Failed to delete project: ${error.message}`))
   console.error(chalk.gray("Error details saved to .vercelx-errors.log"))
@@ -522,14 +541,16 @@ node dist/index.js projects
 ### Git Workflow
 
 1. **Branch Naming**:
+
    - Features: `feature/command-name` (e.g., `feature/deployments-command`)
    - Fixes: `fix/issue-description` (e.g., `fix/pagination-error`)
    - Improvements: `improve/area-description` (e.g., `improve/error-handling`)
 
 2. **Commit Messages**:
+
    ```
    type(scope): description
-   
+
    - feat(commands): add deployments command
    - fix(api): handle rate limiting properly
    - improve(ui): enhance project rendering
@@ -538,6 +559,7 @@ node dist/index.js projects
    ```
 
 3. **Pre-commit Checklist**:
+
    - [ ] TypeScript compiles without errors
    - [ ] No exposed tokens or secrets
    - [ ] Error handling implemented
@@ -562,4 +584,3 @@ node dist/index.js projects
 
 **Last Updated**: 2025-12-12  
 **Maintainer**: See package.json author field
-

@@ -31,6 +31,11 @@ export interface VercelDeployment {
   createdAtTimestamp: number
   buildingAt?: number
   readyAt?: number
+  creator?: {
+    uid: string
+    email?: string
+    username?: string
+  }
 }
 
 export interface VercelUser {
