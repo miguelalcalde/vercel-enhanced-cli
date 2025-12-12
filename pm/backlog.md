@@ -1,3 +1,4 @@
 - [ ] add a header to the table (name, updated, last deployment)
 - [ ] move the CLI key hints to the footer or bottom of the table (all of them)
 - [ ] Add j k to navigate the table in addition to the arrow keys
+- [ ] Add open key combination: o opens the open menu, then depending on the next key pressed one of the different menus will open before you (o + o = open project, o + s = open settings, o + d = open deployments, o + l = open logs)
