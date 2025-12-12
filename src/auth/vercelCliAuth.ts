@@ -28,7 +28,7 @@ export function requireVercelToken(providedToken?: string): string {
     throw new Error(
       "Vercel authentication token not found.\n" +
         "Please provide a token using:\n" +
-        "  - Command line: vercelx projects --token YOUR_TOKEN\n" +
+        "  - Command line: vercli projects --token YOUR_TOKEN\n" +
         "  - Environment variable: export VERCEL_TOKEN=YOUR_TOKEN"
     )
   }

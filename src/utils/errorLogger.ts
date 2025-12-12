@@ -5,7 +5,7 @@ import * as path from "path"
  * Get the path to the error log file (in workspace root where CLI is executed)
  */
 export function getErrorLogPath(): string {
-  return path.resolve(process.cwd(), ".vercelx-errors.log")
+  return path.resolve(process.cwd(), ".vercli-errors.log")
 }
 
 /**

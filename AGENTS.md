@@ -59,7 +59,7 @@ This file provides context and guidelines for AI agents to interact with this re
 
 ## Introduction
 
-This repository contains **Vercel Enhanced CLI** (`vercelx`), an interactive command-line tool for managing Vercel projects with batch actions. The tool provides a user-friendly interface for browsing projects, viewing extended metadata (last updated, last deployment), opening project URLs, and performing batch deletions.
+This repository contains **Vercli** (`vercli`), an interactive command-line tool for managing Vercel projects with batch actions. The tool provides a user-friendly interface for browsing projects, viewing extended metadata (last updated, last deployment), opening project URLs, and performing batch deletions.
 
 AI agents working on this codebase should:
 
@@ -137,7 +137,7 @@ src/
 │   ├── prompts.ts       # Interactive prompt functions
 │   └── renderProjects.ts # Project rendering and formatting
 └── utils/                # Utility functions
-    └── errorLogger.ts   # Error logging to .vercelx-errors.log
+    └── errorLogger.ts   # Error logging to .vercli-errors.log
 ```
 
 ### Import Conventions
@@ -155,7 +155,7 @@ src/
 
 ### Error Logging
 
-- **Log File**: Errors are logged to `.vercelx-errors.log` in the working directory
+- **Log File**: Errors are logged to `.vercli-errors.log` in the working directory
 - **Usage**: Use `logError()` from `utils/errorLogger.ts` for persistent error tracking
 - **Format**: JSON lines format with timestamp, error message, stack trace, and context
 - **Context**: Include operation, project details, and relevant metadata
@@ -286,7 +286,7 @@ src/
 
 ### Debugging and Troubleshooting
 
-1. **Error Logs**: Check `.vercelx-errors.log` for detailed error information
+1. **Error Logs**: Check `.vercli-errors.log` for detailed error information
 
    - JSON lines format for easy parsing
    - Contains stack traces and operation context
@@ -331,7 +331,7 @@ src/
 
 **Example tasks**:
 
-- Add a new `vercelx deployments` command
+- Add a new `vercli deployments` command
 - Improve pagination UX in project selection
 - Add progress bars for long-running operations
 
@@ -389,7 +389,7 @@ src/
 - Add verbose logging for troubleshooting
 - Implement retry logic for failed operations
 - Track down intermittent failures
-- Analyze `.vercelx-errors.log` for patterns
+- Analyze `.vercli-errors.log` for patterns
 
 ## Examples
 
@@ -475,7 +475,7 @@ try {
 
   // Show user-friendly error
   console.error(chalk.red(`❌ Failed to delete project: ${error.message}`))
-  console.error(chalk.gray("Error details saved to .vercelx-errors.log"))
+  console.error(chalk.gray("Error details saved to .vercli-errors.log"))
   process.exit(1)
 }
 ```
@@ -567,7 +567,7 @@ node dist/index.js projects
    - [ ] Code follows existing patterns
 
 4. **Files to Never Commit**:
-   - `.vercelx-errors.log` (error log file)
+   - `.vercli-errors.log` (error log file)
    - `.env` or any file with tokens
    - `node_modules/` (already in .gitignore)
    - Personal test scripts

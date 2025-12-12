@@ -5,7 +5,7 @@ import { searchCommand } from "./commands/search.js"
 const program = new Command()
 
 program
-  .name("vercelx")
+  .name("vercli")
   .description("Interactive CLI for managing Vercel projects")
   .version("0.1.0")
 

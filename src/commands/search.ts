@@ -22,7 +22,7 @@ export async function searchCommand(
   try {
     if (!query || query.trim().length === 0) {
       console.log(chalk.red("Error: Search query is required"))
-      console.log(chalk.yellow("Usage: vercelx search <query>"))
+      console.log(chalk.yellow("Usage: vercli search <query>"))
       process.exit(1)
     }
 

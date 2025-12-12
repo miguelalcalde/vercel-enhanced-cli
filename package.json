@@ -1,9 +1,9 @@
 {
-  "name": "vercel-enhanced-cli",
+  "name": "vercli",
   "version": "0.1.0",
   "description": "Interactive CLI for managing Vercel projects with batch actions",
   "bin": {
-    "vercelx": "./dist/index.js"
+    "vercli": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup",
