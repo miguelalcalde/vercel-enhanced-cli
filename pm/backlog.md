@@ -1,0 +1,3 @@
+- [ ] add a header to the table (name, updated, last deployment)
+- [ ] move the CLI key hints to the footer or bottom of the table (all of them)
+- [ ] Add j k to navigate the table in addition to the arrow keys
