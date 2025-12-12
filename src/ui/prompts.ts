@@ -117,7 +117,18 @@ export async function promptProjectsWithActions(
           "↑↓ navigate  space select  a all  i invert  d delete  o open\n"
         )
       )
-      process.stdout.write(chalk.gray("-".repeat(60)) + "\n")
+      process.stdout.write(chalk.gray("-".repeat(75)) + "\n")
+      // Add table headers
+      process.stdout.write(
+        chalk.gray(
+          "    " +
+            "Name".padEnd(30) +
+            "Updated".padEnd(12) +
+            "Last Deployment".padEnd(20) +
+            "\n"
+        )
+      )
+      process.stdout.write(chalk.gray("-".repeat(75)) + "\n")
 
       const endIndex = Math.min(startIndex + pageSize, projects.length)
       const visibleProjects = projects.slice(startIndex, endIndex)
@@ -429,7 +440,18 @@ export async function promptProjectsWithDynamicUpdates(
           "↑↓ navigate  space select  a all  i invert  d delete  o open\n"
         )
       )
-      process.stdout.write(chalk.gray("-".repeat(60)) + "\n")
+      process.stdout.write(chalk.gray("-".repeat(75)) + "\n")
+      // Add table headers
+      process.stdout.write(
+        chalk.gray(
+          "    " +
+            "Name".padEnd(30) +
+            "Updated".padEnd(12) +
+            "Last Deployment".padEnd(20) +
+            "\n"
+        )
+      )
+      process.stdout.write(chalk.gray("-".repeat(75)) + "\n")
 
       const endIndex = Math.min(startIndex + pageSize, projects.length)
       const visibleProjects = projects.slice(startIndex, endIndex)
