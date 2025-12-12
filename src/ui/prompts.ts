@@ -369,6 +369,292 @@ export async function promptProjectsWithActions(
 }
 
 /**
+ * Custom checkbox prompt with dynamic updates support
+ * Allows external updates to the project list while preserving user interaction state
+ * @param initialProjects - Initial project options to display
+ * @param pageSize - Number of projects to show per page (default: 10)
+ * @param onUpdate - Callback function that receives an update registration function
+ * @returns Selected project IDs and action to perform
+ */
+export async function promptProjectsWithDynamicUpdates(
+  initialProjects: ProjectOption[],
+  pageSize: number = 10,
+  onUpdate: (callback: (projects: ProjectOption[]) => void) => void
+): Promise<{ projectIds: string[]; action: "open" | "delete" | null }> {
+  // Check terminal capabilities
+  const supportsAnsiEscapes = process.stdout.isTTY && !process.env.CI
+  const supportsCursorMovement =
+    supportsAnsiEscapes && process.platform !== "win32"
+
+  if (!supportsCursorMovement || !process.stdin.isTTY) {
+    // Fallback to regular checkbox if not TTY or doesn't support dynamic updates
+    const selected = await checkbox({
+      message: "Select projects:",
+      choices: initialProjects.map((p) => ({
+        name: p.name,
+        value: p.value,
+        description: p.description,
+      })),
+      pageSize,
+    })
+    return {
+      projectIds: selected,
+      action: selected.length > 0 ? "delete" : null,
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    // Use a mutable reference to projects array
+    let projects = [...initialProjects]
+    const selected = new Set<string>()
+    let cursorIndex = 0
+    let startIndex = 0 // For pagination
+    const wasRawMode = process.stdin.isRaw
+    let escapeSequence = ""
+
+    // Ensure raw mode
+    if (!wasRawMode) {
+      process.stdin.setRawMode(true)
+    }
+    process.stdin.resume()
+
+    const render = () => {
+      // Clear screen and move cursor to top
+      process.stdout.write("\x1b[2J\x1b[H")
+      process.stdout.write(
+        chalk.bold("Select projects (space to select, d delete, o open):\n")
+      )
+      process.stdout.write(
+        chalk.gray(
+          "↑↓ navigate  space select  a all  i invert  d delete  o open\n"
+        )
+      )
+      process.stdout.write(chalk.gray("-".repeat(60)) + "\n")
+
+      const endIndex = Math.min(startIndex + pageSize, projects.length)
+      const visibleProjects = projects.slice(startIndex, endIndex)
+
+      for (let i = 0; i < visibleProjects.length; i++) {
+        const projectIndex = startIndex + i
+        const project = projects[projectIndex]
+        const isSelected = selected.has(project.value)
+        const isCursor = projectIndex === cursorIndex
+
+        const prefix = isCursor ? chalk.cyan("> ") : "  "
+        const checkbox = isSelected ? chalk.green("◉") : "○"
+        const name = isCursor
+          ? chalk.cyan(project.name)
+          : isSelected
+          ? chalk.bold(project.name)
+          : project.name
+
+        process.stdout.write(`${prefix}${checkbox} ${name}\n`)
+      }
+
+      if (projects.length > pageSize) {
+        process.stdout.write(
+          chalk.gray(
+            `\nPage ${Math.floor(startIndex / pageSize) + 1} of ${Math.ceil(
+              projects.length / pageSize
+            )}\n`
+          )
+        )
+      }
+
+      if (selected.size > 0) {
+        process.stdout.write(
+          chalk.green(`\n${selected.size} project(s) selected\n`)
+        )
+      }
+    }
+
+    // Update function that can be called externally
+    const updateProjects = (newProjects: ProjectOption[]) => {
+      // Preserve cursor position relative to project ID if possible
+      const currentProjectId =
+        projects.length > 0 && cursorIndex < projects.length
+          ? projects[cursorIndex].value
+          : null
+
+      projects = [...newProjects]
+
+      // Try to restore cursor position to same project ID
+      if (currentProjectId) {
+        const newIndex = projects.findIndex((p) => p.value === currentProjectId)
+        if (newIndex !== -1) {
+          cursorIndex = newIndex
+        } else {
+          // Project not found, clamp cursor to valid range
+          cursorIndex = Math.min(cursorIndex, projects.length - 1)
+        }
+      } else {
+        cursorIndex = Math.min(cursorIndex, projects.length - 1)
+      }
+
+      // Ensure cursor is within visible page
+      if (cursorIndex < startIndex) {
+        startIndex = Math.max(0, cursorIndex)
+      } else if (cursorIndex >= startIndex + pageSize) {
+        startIndex = Math.max(0, cursorIndex - pageSize + 1)
+      }
+
+      // Re-render with updated data
+      render()
+    }
+
+    // Register the update callback
+    onUpdate(updateProjects)
+
+    const handleData = (chunk: Buffer) => {
+      const data = chunk.toString("utf8")
+
+      // Combine with any existing escape sequence
+      const fullData = escapeSequence + data
+
+      // Check for complete arrow key sequences
+      if (
+        fullData.length >= 3 &&
+        fullData[0] === "\x1b" &&
+        fullData[1] === "["
+      ) {
+        if (fullData.length >= 3 && fullData[2] === "A") {
+          // Up arrow - complete sequence
+          escapeSequence = ""
+          cursorIndex = Math.max(0, cursorIndex - 1)
+          if (cursorIndex < startIndex) {
+            startIndex = Math.max(0, startIndex - pageSize)
+          }
+          render()
+          return
+        } else if (fullData.length >= 3 && fullData[2] === "B") {
+          // Down arrow - complete sequence
+          escapeSequence = ""
+          cursorIndex = Math.min(projects.length - 1, cursorIndex + 1)
+          if (cursorIndex >= startIndex + pageSize) {
+            startIndex = Math.min(
+              projects.length - pageSize,
+              startIndex + pageSize
+            )
+          }
+          render()
+          return
+        } else if (fullData.length === 2) {
+          // Still building - have "\x1b[" but waiting for A/B
+          escapeSequence = fullData
+          return
+        } else {
+          // Invalid sequence, reset
+          escapeSequence = ""
+        }
+      } else if (fullData.length === 1 && fullData[0] === "\x1b") {
+        // Just started escape sequence
+        escapeSequence = fullData
+        return
+      } else if (escapeSequence.length > 0) {
+        // Had escape sequence but this doesn't match, reset
+        escapeSequence = ""
+      }
+
+      // Handle Ctrl+C
+      if (data === "\x03" || (data.length === 1 && data.charCodeAt(0) === 3)) {
+        process.stdin.removeListener("data", handleData)
+        process.stdin.setRawMode(wasRawMode || false)
+        process.stdin.pause()
+        process.stdout.write("\n")
+        resolve({ projectIds: [], action: null })
+        return
+      }
+
+      // Handle 'd' for delete - immediately trigger if projects selected
+      if (data === "d" && selected.size > 0) {
+        process.stdin.removeListener("data", handleData)
+        process.stdin.setRawMode(wasRawMode || false)
+        process.stdin.pause()
+        process.stdout.write("\x1b[2J\x1b[H")
+        resolve({
+          projectIds: Array.from(selected),
+          action: "delete",
+        })
+        return
+      }
+
+      // Handle 'o' for open - use cursor position if nothing selected
+      if (data === "o") {
+        const projectToOpen =
+          selected.size > 0
+            ? Array.from(selected)
+            : projects.length > 0
+            ? [projects[cursorIndex].value]
+            : []
+
+        process.stdin.removeListener("data", handleData)
+        process.stdin.setRawMode(wasRawMode || false)
+        process.stdin.pause()
+        process.stdout.write("\x1b[2J\x1b[H")
+        resolve({
+          projectIds: projectToOpen,
+          action: "open",
+        })
+        return
+      }
+
+      // Handle space to toggle selection
+      if (data === " ") {
+        if (projects.length > 0 && cursorIndex < projects.length) {
+          const project = projects[cursorIndex]
+          if (selected.has(project.value)) {
+            selected.delete(project.value)
+          } else {
+            selected.add(project.value)
+          }
+          render()
+        }
+        return
+      }
+
+      // Handle 'a' to select all
+      if (data === "a") {
+        projects.forEach((p) => selected.add(p.value))
+        render()
+        return
+      }
+
+      // Handle 'i' to invert selection
+      if (data === "i") {
+        projects.forEach((p) => {
+          if (selected.has(p.value)) {
+            selected.delete(p.value)
+          } else {
+            selected.add(p.value)
+          }
+        })
+        render()
+        return
+      }
+
+      // Reset escape sequence if not part of one (and not already handled)
+      if (escapeSequence.length > 0 && !escapeSequence.startsWith("\x1b")) {
+        escapeSequence = ""
+      }
+    }
+
+    // Set up data listener for raw stdin
+    process.stdin.on("data", handleData)
+
+    // Initial render
+    render()
+
+    // Cleanup on error
+    process.stdin.on("error", (err) => {
+      process.stdin.removeListener("data", handleData)
+      process.stdin.setRawMode(wasRawMode || false)
+      process.stdin.pause()
+      reject(err)
+    })
+  })
+}
+
+/**
  * Prompt user to select multiple projects (for deletion)
  */
 export async function promptProjectsMultiSelect(

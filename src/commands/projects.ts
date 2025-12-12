@@ -60,11 +60,27 @@ export async function projectsCommand(providedToken?: string) {
     // Main loop - return to selection after actions
     let continueLoop = true
     while (continueLoop) {
-      // Fetch deployments gradually (lazy loading per page)
-      const latestDeployments = new Map<string, VercelDeployment | null>()
+      // Initialize all projects with loading state
+      let projectsWithMetadata: ProjectWithMetadata[] = projects.map(
+        (project) => ({
+          ...project,
+          lastDeployment: null,
+          deploymentLoading: true,
+        })
+      )
+
+      // Create update callback
+      let updateCallback: ((projects: ProjectOption[]) => void) | null = null
+
+      const registerUpdateCallback = (
+        callback: (projects: ProjectOption[]) => void
+      ) => {
+        updateCallback = callback
+      }
 
       /**
        * Fetch deployments for a specific page of projects
+       * Triggers UI updates when deployment data arrives
        */
       async function fetchDeploymentsForPage(
         pageProjects: typeof projects,
@@ -85,68 +101,85 @@ export async function projectsCommand(providedToken?: string) {
                 projectId,
                 limit: 1,
               })
-              latestDeployments.set(projectId, projectDeployments[0] || null)
-            } catch (error) {
-              // If project has no deployments or error, set to null
-              // Only log non-404 errors (404 is expected for projects without deployments)
-              const errorMessage =
-                error instanceof Error ? error.message : String(error)
-              if (
-                !errorMessage.includes("404") &&
-                !errorMessage.includes("Not Found")
-              ) {
-                logError(
-                  error instanceof Error ? error : new Error(errorMessage),
-                  {
-                    operation: "fetchDeployments",
-                    projectId: projectId,
-                    teamId: scopeTeamId,
-                  }
-                )
+
+              // Update the specific project
+              const projectIndex = projectsWithMetadata.findIndex(
+                (p) => p.id === projectId
+              )
+              if (projectIndex !== -1) {
+                projectsWithMetadata[projectIndex] = {
+                  ...projectsWithMetadata[projectIndex],
+                  lastDeployment: projectDeployments[0] || null,
+                  deploymentLoading: false,
+                }
+
+                // Trigger UI update if callback is registered
+                if (updateCallback) {
+                  const updatedOptions = projectsWithMetadata.map(
+                    (project) => ({
+                      name: formatProjectOption(project),
+                      value: project.id,
+                      description: project.name,
+                    })
+                  )
+                  updateCallback(updatedOptions)
+                }
               }
-              latestDeployments.set(projectId, null)
+            } catch (error) {
+              // Mark as not loading even on error
+              const projectIndex = projectsWithMetadata.findIndex(
+                (p) => p.id === projectId
+              )
+              if (projectIndex !== -1) {
+                projectsWithMetadata[projectIndex].deploymentLoading = false
+
+                // Only log non-404 errors (404 is expected for projects without deployments)
+                const errorMessage =
+                  error instanceof Error ? error.message : String(error)
+                if (
+                  !errorMessage.includes("404") &&
+                  !errorMessage.includes("Not Found")
+                ) {
+                  logError(
+                    error instanceof Error ? error : new Error(errorMessage),
+                    {
+                      operation: "fetchDeployments",
+                      projectId: projectId,
+                      teamId: scopeTeamId,
+                    }
+                  )
+                }
+
+                // Trigger UI update to show error state
+                if (updateCallback) {
+                  const updatedOptions = projectsWithMetadata.map(
+                    (project) => ({
+                      name: formatProjectOption(project),
+                      value: project.id,
+                      description: project.name,
+                    })
+                  )
+                  updateCallback(updatedOptions)
+                }
+              }
             }
           })
         )
       }
 
-      // Fetch deployments for first page immediately (for initial display)
-      console.log(chalk.blue("🚀 Fetching deployment data for first page..."))
-      await fetchDeploymentsForPage(projects, 0)
-      const firstPageCount = Math.min(pageSize, projects.length)
-      console.log(
-        chalk.green(
-          `✓ Fetched deployment data for first ${firstPageCount} project(s)\n`
-        )
-      )
-
-      // Combine projects with deployment metadata
-      let projectsWithMetadata: ProjectWithMetadata[] = projects.map(
-        (project) => ({
-          ...project,
-          lastDeployment: latestDeployments.get(project.id) || null,
-        })
-      )
-
-      // Fetch remaining deployments in background
-      const totalPages = Math.ceil(projects.length / pageSize)
-      if (totalPages > 1) {
-        const backgroundFetch = (async () => {
-          for (let pageNum = 1; pageNum < totalPages; pageNum++) {
-            await fetchDeploymentsForPage(projects, pageNum)
-            projectsWithMetadata = projects.map((project) => ({
-              ...project,
-              lastDeployment: latestDeployments.get(project.id) || null,
-            }))
-          }
-        })().catch(() => {
-          // Silently handle background fetch errors
-        })
-        void backgroundFetch
+      // Start fetching all pages immediately
+      const fetchAllDeployments = async () => {
+        const totalPages = Math.ceil(projects.length / pageSize)
+        for (let pageNum = 0; pageNum < totalPages; pageNum++) {
+          await fetchDeploymentsForPage(projects, pageNum)
+        }
       }
 
-      // Show interactive select interface
-      const projectOptions: ProjectOption[] = projectsWithMetadata.map(
+      // Start background fetching
+      const deploymentFetchPromise = fetchAllDeployments()
+
+      // Show initial project options with loading states
+      const initialProjectOptions: ProjectOption[] = projectsWithMetadata.map(
         (project) => ({
           name: formatProjectOption(project),
           value: project.id,
@@ -154,11 +187,20 @@ export async function projectsCommand(providedToken?: string) {
         })
       )
 
-      const { promptProjectsWithActions } = await import("../ui/prompts.js")
-      const { projectIds, action } = await promptProjectsWithActions(
-        projectOptions,
-        pageSize
+      // Show dynamic prompt with update support
+      const { promptProjectsWithDynamicUpdates } = await import(
+        "../ui/prompts.js"
       )
+      const { projectIds, action } = await promptProjectsWithDynamicUpdates(
+        initialProjectOptions,
+        pageSize,
+        registerUpdateCallback
+      )
+
+      // Wait for deployment fetching to complete (in case user exits quickly)
+      await deploymentFetchPromise.catch(() => {
+        // Silently handle errors - already logged in fetchDeploymentsForPage
+      })
 
       if (projectIds.length === 0 || !action) {
         // Exit gracefully

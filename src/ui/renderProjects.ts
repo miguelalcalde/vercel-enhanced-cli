@@ -3,6 +3,7 @@ import { VercelProject, VercelDeployment } from "../api/vercelApi.js"
 
 export interface ProjectWithMetadata extends VercelProject {
   lastDeployment?: VercelDeployment | null
+  deploymentLoading?: boolean
 }
 
 /**
@@ -59,11 +60,15 @@ export function formatProjectOption(project: ProjectWithMetadata): string {
   const name = project.name
   const updated = formatRelativeTime(project.updatedAt)
 
-  let deploymentInfo = chalk.gray("never deployed")
-  if (project.lastDeployment) {
+  let deploymentInfo: string
+  if (project.deploymentLoading) {
+    deploymentInfo = chalk.blue("⋯ loading")
+  } else if (project.lastDeployment) {
     const deployTime = formatRelativeTime(project.lastDeployment.createdAt)
     const deployState = formatDeploymentState(project.lastDeployment.state)
     deploymentInfo = `${deployTime} (${deployState})`
+  } else {
+    deploymentInfo = chalk.gray("never deployed")
   }
 
   return `${name.padEnd(30)} ${updated.padEnd(10)} ${deploymentInfo}`
