@@ -194,7 +194,9 @@ export async function projectsCommand(providedToken?: string) {
       const { projectIds, action } = await promptProjectsWithDynamicUpdates(
         initialProjectOptions,
         pageSize,
-        registerUpdateCallback
+        registerUpdateCallback,
+        projectsWithMetadata,
+        formatProjectOption
       )
 
       // Wait for deployment fetching to complete (in case user exits quickly)

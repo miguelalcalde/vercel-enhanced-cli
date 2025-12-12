@@ -1,6 +1,7 @@
 import { select, confirm, checkbox } from "@inquirer/prompts"
 import chalk from "chalk"
 import * as readline from "readline"
+import { ProjectWithMetadata } from "./renderProjects.js"
 
 export interface TeamOption {
   name: string
@@ -387,12 +388,16 @@ export async function promptProjectsWithActions(
  * @param initialProjects - Initial project options to display
  * @param pageSize - Number of projects to show per page (default: 10)
  * @param onUpdate - Callback function that receives an update registration function
+ * @param allProjectsWithMetadata - Optional full project metadata for search filtering
+ * @param formatProjectOptionFn - Optional function to format projects (needed for search filtering)
  * @returns Selected project IDs and action to perform
  */
 export async function promptProjectsWithDynamicUpdates(
   initialProjects: ProjectOption[],
   pageSize: number = 10,
-  onUpdate: (callback: (projects: ProjectOption[]) => void) => void
+  onUpdate: (callback: (projects: ProjectOption[]) => void) => void,
+  allProjectsWithMetadata?: ProjectWithMetadata[],
+  formatProjectOptionFn?: (project: ProjectWithMetadata) => string
 ): Promise<{ projectIds: string[]; action: "open" | "delete" | null }> {
   // Check terminal capabilities
   const supportsAnsiEscapes = process.stdout.isTTY && !process.env.CI
@@ -425,6 +430,14 @@ export async function promptProjectsWithDynamicUpdates(
     const wasRawMode = process.stdin.isRaw
     let escapeSequence = ""
 
+    // Search state
+    let isSearching = false
+    let searchQuery = "" // Current input while searching
+    let activeFilterQuery = "" // Applied filter (persists after Enter)
+    const allProjects = allProjectsWithMetadata || []
+    const formatProject =
+      formatProjectOptionFn || ((p: ProjectWithMetadata) => p.name)
+
     // Ensure raw mode
     if (!wasRawMode) {
       process.stdin.setRawMode(true)
@@ -434,15 +447,39 @@ export async function promptProjectsWithDynamicUpdates(
     const render = () => {
       // Clear screen and move cursor to top
       process.stdout.write("\x1b[2J\x1b[H")
-      process.stdout.write(
-        chalk.bold("Select projects (space to select, d delete, o open):\n")
-      )
-      process.stdout.write(
-        chalk.gray(
-          "↑↓ navigate  space select  a all  i invert  d delete  o open\n"
+
+      // Show search input if in search mode
+      if (isSearching) {
+        process.stdout.write(
+          chalk.bold.cyan(`Search: ${searchQuery}${chalk.inverse(" ")}\n`)
         )
-      )
-      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+        process.stdout.write(
+          chalk.gray("Type to search, Enter to apply, ESC to clear\n")
+        )
+        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+      } else {
+        const headerText = activeFilterQuery
+          ? `Select projects (filtered: "${activeFilterQuery}")`
+          : "Select projects (space to select, d delete, o open, s search)"
+        process.stdout.write(chalk.bold(`${headerText}:\n`))
+        process.stdout.write(
+          chalk.gray(
+            "↑↓ navigate  space select  a all  i invert  d delete  o open  s search\n"
+          )
+        )
+        if (activeFilterQuery) {
+          process.stdout.write(
+            chalk.blue(
+              `  Filter active: "${activeFilterQuery}" (${
+                projects.length
+              } match${
+                projects.length !== 1 ? "es" : ""
+              }) - Press ESC to clear\n`
+            )
+          )
+        }
+        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+      }
       // Add table headers
       process.stdout.write(
         chalk.gray(
@@ -492,10 +529,64 @@ export async function promptProjectsWithDynamicUpdates(
           chalk.green(`\n${selected.size} project(s) selected\n`)
         )
       }
+
+      // Show search status (only when actively searching, not when filter is applied)
+      if (isSearching && searchQuery.trim()) {
+        process.stdout.write(
+          chalk.blue(
+            `\nSearching for: "${searchQuery}" (${projects.length} match${
+              projects.length !== 1 ? "es" : ""
+            })\n`
+          )
+        )
+      }
+    }
+
+    /**
+     * Filter projects based on search query
+     */
+    const filterProjects = (query: string): ProjectOption[] => {
+      // Use activeFilterQuery if no query provided (when filter is applied)
+      const filterToUse = query || activeFilterQuery
+      if (!filterToUse.trim() || allProjects.length === 0) {
+        return initialProjects
+      }
+
+      const searchTerm = filterToUse.toLowerCase().trim()
+      const filtered = allProjects.filter((project) => {
+        // Search by project name
+        const nameMatch = project.name.toLowerCase().includes(searchTerm)
+
+        // Search by creator name (username, email, or uid)
+        let creatorMatch = false
+        if (project.lastDeployment?.creator) {
+          const creator = project.lastDeployment.creator
+          const creatorName =
+            creator.username?.toLowerCase() ||
+            creator.email?.toLowerCase() ||
+            creator.uid?.toLowerCase() ||
+            ""
+          creatorMatch = creatorName.includes(searchTerm)
+        }
+
+        return nameMatch || creatorMatch
+      })
+
+      // Convert filtered projects back to ProjectOption format
+      return filtered.map((project) => ({
+        name: formatProject(project),
+        value: project.id,
+        description: project.name,
+      }))
     }
 
     // Update function that can be called externally
     const updateProjects = (newProjects: ProjectOption[]) => {
+      // Don't update if we're in search mode or have an active filter (search filtering takes precedence)
+      if (isSearching || activeFilterQuery) {
+        return
+      }
+
       // Preserve cursor position relative to project ID if possible
       const currentProjectId =
         projects.length > 0 && cursorIndex < projects.length
@@ -525,6 +616,42 @@ export async function promptProjectsWithDynamicUpdates(
       }
 
       // Re-render with updated data
+      render()
+    }
+
+    /**
+     * Apply search filter and update displayed projects
+     */
+    const applySearchFilter = () => {
+      // Use searchQuery if actively searching, otherwise use activeFilterQuery
+      const queryToUse = isSearching ? searchQuery : activeFilterQuery
+      const filtered = filterProjects(queryToUse)
+
+      // Preserve cursor position relative to project ID if possible
+      const currentProjectId =
+        projects.length > 0 && cursorIndex < projects.length
+          ? projects[cursorIndex].value
+          : null
+
+      projects = filtered
+
+      // Try to restore cursor position to same project ID
+      if (currentProjectId && projects.length > 0) {
+        const newIndex = projects.findIndex((p) => p.value === currentProjectId)
+        if (newIndex !== -1) {
+          cursorIndex = newIndex
+        } else {
+          // Project not found, reset to top
+          cursorIndex = 0
+        }
+      } else {
+        cursorIndex = 0
+      }
+
+      // Reset pagination
+      startIndex = 0
+
+      // Re-render
       render()
     }
 
@@ -588,6 +715,83 @@ export async function promptProjectsWithDynamicUpdates(
         process.stdin.pause()
         process.stdout.write("\n")
         resolve({ projectIds: [], action: null })
+        return
+      }
+
+      // Handle search mode
+      if (isSearching) {
+        // Handle Escape to clear search completely
+        if (data === "\x1b") {
+          isSearching = false
+          searchQuery = ""
+          activeFilterQuery = ""
+          // Restore full project list
+          projects = [...initialProjects]
+          cursorIndex = 0
+          startIndex = 0
+          render()
+          return
+        }
+
+        // Handle Enter to apply search (keep filter active, exit input mode)
+        if (data === "\r" || data === "\n") {
+          activeFilterQuery = searchQuery.trim()
+          isSearching = false
+          // Apply the filter one more time to ensure it's set correctly
+          applySearchFilter()
+          return
+        }
+
+        // Handle backspace/delete
+        if (
+          data === "\x7f" ||
+          data === "\b" ||
+          (data.length === 1 && data.charCodeAt(0) === 127)
+        ) {
+          if (searchQuery.length > 0) {
+            searchQuery = searchQuery.slice(0, -1)
+            applySearchFilter()
+          }
+          return
+        }
+
+        // Handle regular character input (printable ASCII)
+        if (
+          data.length === 1 &&
+          data.charCodeAt(0) >= 32 &&
+          data.charCodeAt(0) <= 126
+        ) {
+          searchQuery += data
+          applySearchFilter()
+          return
+        }
+
+        // Ignore other keys in search mode
+        return
+      }
+
+      // Handle 's' to enter search mode (only if search is supported)
+      if (data === "s" && allProjects.length > 0 && formatProjectOptionFn) {
+        isSearching = true
+        // Pre-fill with active filter if one exists
+        searchQuery = activeFilterQuery
+        render()
+        return
+      }
+
+      // Handle ESC to clear active filter (when not in search mode and not part of arrow key sequence)
+      if (
+        data === "\x1b" &&
+        !isSearching &&
+        activeFilterQuery &&
+        escapeSequence === ""
+      ) {
+        activeFilterQuery = ""
+        // Restore full project list
+        projects = [...initialProjects]
+        cursorIndex = 0
+        startIndex = 0
+        render()
         return
       }
 
