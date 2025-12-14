@@ -1,6 +1,16 @@
-import { requireVercelToken } from "../auth/vercelCliAuth.js"
-import { VercelApi, VercelDeployment } from "../api/vercelApi.js"
-import { confirmAction, ProjectOption } from "../ui/prompts.js"
+import {
+  requireVercelToken,
+  readCurrentTeam,
+  writeCurrentTeam,
+} from "../auth/vercelCliAuth.js"
+import { VercelApi, VercelDeployment, VercelTeam } from "../api/vercelApi.js"
+import {
+  confirmAction,
+  ProjectOption,
+  promptTeam,
+  TeamOption,
+  promptProjectsWithDynamicUpdates,
+} from "../ui/prompts.js"
 import {
   formatProjectOption,
   ProjectWithMetadata,
@@ -20,37 +30,67 @@ export async function projectsCommand(providedToken?: string) {
     const token = requireVercelToken(providedToken)
     const api = new VercelApi(token)
 
-    // Step 2: Fetch user info and teams for scope detection
+    // Step 2: Fetch user info and teams
     console.log(chalk.blue("📋 Fetching user information..."))
     const user = await api.getCurrentUser()
     const teams = await api.listTeams()
     const teamsMap = new Map(teams.map((t) => [t.id, t]))
 
-    // Step 3: Fetch projects (token scope determines which projects are shown)
+    // Step 3: Get or select current team
+    let currentTeamId: string | null = readCurrentTeam()
+
+    // If no team is set, prompt user to select one
+    if (currentTeamId === undefined) {
+      console.log(chalk.blue("👥 No team selected. Please choose a team:\n"))
+      const teamOptions: TeamOption[] = teams.map((team) => ({
+        name: team.name,
+        value: team.id,
+      }))
+      currentTeamId = await promptTeam(teamOptions)
+      writeCurrentTeam(currentTeamId)
+      console.log() // Add spacing
+    } else if (currentTeamId !== null) {
+      // Validate that the saved team still exists
+      const teamExists = teams.some((t) => t.id === currentTeamId)
+      if (!teamExists) {
+        console.log(
+          chalk.yellow(
+            `⚠️  Saved team (${currentTeamId}) not found. Please select a team:\n`
+          )
+        )
+        const teamOptions: TeamOption[] = teams.map((team) => ({
+          name: team.name,
+          value: team.id,
+        }))
+        currentTeamId = await promptTeam(teamOptions)
+        writeCurrentTeam(currentTeamId)
+        console.log() // Add spacing
+      }
+    }
+
+    // Step 4: Determine scope information
+    let scopeSlug: string = user.username
+    let scopeTeamId: string | null = currentTeamId
+    let scopeName: string = "Personal"
+
+    if (currentTeamId !== null) {
+      const selectedTeam = teams.find((t) => t.id === currentTeamId)
+      if (selectedTeam) {
+        scopeSlug = selectedTeam.slug
+        scopeName = selectedTeam.name
+      }
+    }
+
+    console.log(chalk.green(`✓ Using scope: ${scopeName}\n`))
+
+    // Step 5: Fetch projects for the selected team
     console.log(chalk.blue("📦 Fetching projects..."))
-    let projects = await api.listProjects(null)
+    let projects = await api.listProjects(scopeTeamId)
 
     if (projects.length === 0) {
       console.log(chalk.yellow("No projects found."))
       return
     }
-
-    // Determine scope from projects (check accountId against teams)
-    let scopeSlug: string = user.username
-    let scopeTeamId: string | null = null
-    let scopeName: string = "Personal"
-
-    // Check if projects belong to a team
-    if (projects.length > 0 && projects[0].accountId) {
-      const matchingTeam = teams.find((t) => t.id === projects[0].accountId)
-      if (matchingTeam) {
-        scopeSlug = matchingTeam.slug
-        scopeTeamId = matchingTeam.id
-        scopeName = matchingTeam.name
-      }
-    }
-
-    console.log(chalk.green(`✓ Using scope: ${scopeName}\n`))
 
     // Sort projects by last updated (newest first)
     projects.sort((a, b) => b.updatedAt - a.updatedAt)
@@ -187,29 +227,38 @@ export async function projectsCommand(providedToken?: string) {
         })
       )
 
+      // Prepare team options for settings menu
+      const teamOptions: TeamOption[] = teams.map((team) => ({
+        name: team.name,
+        value: team.id,
+      }))
+
       // Show dynamic prompt with update support
-      const { promptProjectsWithDynamicUpdates } = await import(
-        "../ui/prompts.js"
-      )
-      const { projectIds, action } = await promptProjectsWithDynamicUpdates(
+      const result = await promptProjectsWithDynamicUpdates(
         initialProjectOptions,
         pageSize,
         registerUpdateCallback,
         projectsWithMetadata,
-        formatProjectOption
+        formatProjectOption,
+        teamOptions,
+        scopeTeamId
       )
+      const { projectIds, action } = result
 
       // Wait for deployment fetching to complete (in case user exits quickly)
       await deploymentFetchPromise.catch(() => {
         // Silently handle errors - already logged in fetchDeploymentsForPage
       })
 
-      if (projectIds.length === 0 || !action) {
+      // Exit only if action is null/undefined (user cancelled)
+      // Settings actions (like change-team) can have empty projectIds but valid action
+      if (!action) {
         // Exit gracefully
         continueLoop = false
         break
       }
 
+      // Type guard for open actions
       if (
         action === "open" ||
         action === "open-settings" ||
@@ -242,6 +291,44 @@ export async function projectsCommand(providedToken?: string) {
           }
           projects.sort((a, b) => b.updatedAt - a.updatedAt)
         }
+      } else if (action === "change-team") {
+        // Show team selection prompt
+        const teamOptions: TeamOption[] = teams.map((team) => ({
+          name: team.name,
+          value: team.id,
+        }))
+        const selectedTeam = await promptTeam(teamOptions)
+
+        // If user selected a new team, update and refresh projects
+        if (selectedTeam !== scopeTeamId) {
+          writeCurrentTeam(selectedTeam)
+          currentTeamId = selectedTeam
+
+          // Update scope information
+          scopeTeamId = selectedTeam
+          if (selectedTeam !== null) {
+            const team = teams.find((t) => t.id === selectedTeam)
+            if (team) {
+              scopeSlug = team.slug
+              scopeName = team.name
+            }
+          } else {
+            scopeSlug = user.username
+            scopeName = "Personal"
+          }
+
+          // Re-fetch projects for the new team
+          console.log(chalk.blue("\n📦 Fetching projects..."))
+          projects = await api.listProjects(scopeTeamId)
+          if (projects.length === 0) {
+            console.log(chalk.yellow("No projects found."))
+            continueLoop = false
+            break
+          }
+          projects.sort((a, b) => b.updatedAt - a.updatedAt)
+          console.log(chalk.green(`✓ Using scope: ${scopeName}\n`))
+        }
+        // Return to selection (whether team changed or not)
       }
     }
   } catch (error) {

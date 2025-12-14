@@ -28,6 +28,109 @@ export async function promptTeam(teams: TeamOption[]): Promise<string | null> {
   return selected
 }
 
+/**
+ * Settings menu for managing CLI preferences
+ * @param teams - Available teams to choose from
+ * @param currentTeamId - Currently selected team ID (or null for personal)
+ * @returns Selected team ID (or null for personal), or null if cancelled
+ */
+export async function promptSettingsMenu(
+  teams: TeamOption[],
+  currentTeamId: string | null
+): Promise<string | null | undefined> {
+  // Clear screen
+  process.stdout.write("\x1b[2J\x1b[H")
+
+  const currentTeamName =
+    currentTeamId === null
+      ? "Personal"
+      : teams.find((t) => t.value === currentTeamId)?.name || "Unknown"
+
+  console.log(chalk.bold.cyan("Settings\n"))
+  console.log(chalk.gray("-".repeat(100)))
+  console.log(chalk.cyan("  t") + " - Change team (Current: " + chalk.bold(currentTeamName) + ")")
+  console.log(chalk.gray("  ESC - Back to projects\n"))
+  console.log(chalk.gray("-".repeat(100)))
+
+  return new Promise((resolve, reject) => {
+    const wasRawMode = process.stdin.isRaw
+    let escapeSequence = ""
+
+    if (!wasRawMode) {
+      process.stdin.setRawMode(true)
+    }
+    process.stdin.resume()
+
+    const handleData = (chunk: Buffer) => {
+      const data = chunk.toString("utf8")
+      const fullData = escapeSequence + data
+
+      // Handle arrow keys (ignore them in settings menu)
+      if (
+        fullData.length >= 3 &&
+        fullData[0] === "\x1b" &&
+        fullData[1] === "["
+      ) {
+        if (fullData.length >= 3 && (fullData[2] === "A" || fullData[2] === "B")) {
+          escapeSequence = ""
+          return // Ignore arrow keys
+        } else if (fullData.length === 2) {
+          escapeSequence = fullData
+          return
+        } else {
+          escapeSequence = ""
+        }
+      } else if (fullData.length === 1 && fullData[0] === "\x1b") {
+        escapeSequence = fullData
+        return
+      } else if (escapeSequence.length > 0) {
+        escapeSequence = ""
+      }
+
+      // Handle Ctrl+C
+      if (data === "\x03" || (data.length === 1 && data.charCodeAt(0) === 3)) {
+        process.stdin.removeListener("data", handleData)
+        process.stdin.setRawMode(wasRawMode || false)
+        process.stdin.pause()
+        process.stdout.write("\n")
+        resolve(undefined) // Cancelled
+        return
+      }
+
+      // Handle ESC to go back
+      if (data === "\x1b" && escapeSequence === "") {
+        process.stdin.removeListener("data", handleData)
+        process.stdin.setRawMode(wasRawMode || false)
+        process.stdin.pause()
+        process.stdout.write("\x1b[2J\x1b[H")
+        resolve(undefined) // Back to projects
+        return
+      }
+
+      // Handle 't' to change team
+      if (data === "t") {
+        process.stdin.removeListener("data", handleData)
+        process.stdin.setRawMode(wasRawMode || false)
+        process.stdin.pause()
+        process.stdout.write("\x1b[2J\x1b[H")
+        // Signal to change team - will be handled by caller
+        resolve(null) // Signal to change team
+        return
+      }
+    }
+
+    process.stdin.on("data", handleData)
+
+    // Cleanup on error
+    process.stdin.on("error", (err) => {
+      process.stdin.removeListener("data", handleData)
+      process.stdin.setRawMode(wasRawMode || false)
+      process.stdin.pause()
+      reject(err)
+    })
+  })
+}
+
 export interface ProjectOption {
   name: string
   value: string
@@ -406,7 +509,9 @@ export async function promptProjectsWithDynamicUpdates(
   pageSize: number = 10,
   onUpdate: (callback: (projects: ProjectOption[]) => void) => void,
   allProjectsWithMetadata?: ProjectWithMetadata[],
-  formatProjectOptionFn?: (project: ProjectWithMetadata) => string
+  formatProjectOptionFn?: (project: ProjectWithMetadata) => string,
+  teams?: TeamOption[],
+  currentTeamId?: string | null
 ): Promise<{
   projectIds: string[]
   action:
@@ -415,6 +520,7 @@ export async function promptProjectsWithDynamicUpdates(
     | "open-deployments"
     | "open-logs"
     | "delete"
+    | "change-team"
     | null
 }> {
   // Check terminal capabilities
@@ -459,6 +565,9 @@ export async function promptProjectsWithDynamicUpdates(
     // Open menu state
     let isOpenMenuActive = false
 
+    // Settings menu state
+    let isSettingsMenuActive = false
+
     // Ensure raw mode
     if (!wasRawMode) {
       process.stdin.setRawMode(true)
@@ -468,6 +577,25 @@ export async function promptProjectsWithDynamicUpdates(
     const render = () => {
       // Clear screen and move cursor to top
       process.stdout.write("\x1b[2J\x1b[H")
+
+      // Show settings menu if active
+      if (isSettingsMenuActive) {
+        const currentTeamName =
+          currentTeamId === null || currentTeamId === undefined
+            ? "Personal"
+            : teams?.find((t) => t.value === currentTeamId)?.name || "Unknown"
+        process.stdout.write(chalk.bold.cyan("Settings\n"))
+        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+        process.stdout.write(
+          chalk.cyan("  1") +
+            " - Change team (Current: " +
+            chalk.bold(currentTeamName) +
+            ")\n"
+        )
+        process.stdout.write(chalk.gray("  ESC - Back to projects\n"))
+        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+        return
+      }
 
       // Show open menu if active
       if (isOpenMenuActive) {
@@ -482,10 +610,10 @@ export async function promptProjectsWithDynamicUpdates(
           chalk.bold.cyan(`Open menu for: ${selectedProjectName}\n`)
         )
         process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
-        process.stdout.write(chalk.cyan("  o") + " - Open project\n")
-        process.stdout.write(chalk.cyan("  e") + " - Open settings\n")
-        process.stdout.write(chalk.cyan("  p") + " - Open deployments\n")
-        process.stdout.write(chalk.cyan("  l") + " - Open logs\n")
+        process.stdout.write(chalk.cyan("  1") + " - Open project\n")
+        process.stdout.write(chalk.cyan("  2") + " - Open settings\n")
+        process.stdout.write(chalk.cyan("  3") + " - Open deployments\n")
+        process.stdout.write(chalk.cyan("  4") + " - Open logs\n")
         process.stdout.write(chalk.gray("  ESC - Cancel\n"))
         process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
         return
@@ -503,11 +631,11 @@ export async function promptProjectsWithDynamicUpdates(
       } else {
         const headerText = activeFilterQuery
           ? `Select projects (filtered: "${activeFilterQuery}")`
-          : "Select projects (space to select, d delete, o open, s search)"
+          : "Select projects (space to select, d delete, o open, s search, t settings)"
         process.stdout.write(chalk.bold(`${headerText}:\n`))
         process.stdout.write(
           chalk.gray(
-            "↑↓ navigate  space select  a all  i invert  d delete  o open  s search\n"
+            "↑↓ navigate  space select  a all  i invert  d delete  o open  s search  t settings\n"
           )
         )
         if (activeFilterQuery) {
@@ -707,14 +835,43 @@ export async function promptProjectsWithDynamicUpdates(
       // Combine with any existing escape sequence
       const fullData = escapeSequence + data
 
-      // Check for complete arrow key sequences (ignore when open menu is active)
+      // Check for complete arrow key sequences (ignore when menus are active)
       if (
         !isOpenMenuActive &&
+        !isSettingsMenuActive &&
         fullData.length >= 3 &&
         fullData[0] === "\x1b" &&
         fullData[1] === "["
       ) {
-        if (fullData.length >= 3 && fullData[2] === "A") {
+        // Check for Home: \x1b[H or \x1b[1~
+        if (
+          (fullData.length >= 3 && fullData[2] === "H") ||
+          (fullData.length >= 5 && fullData[2] === "1" && fullData[3] === "~")
+        ) {
+          // Home - go back one full page
+          escapeSequence = ""
+          startIndex = Math.max(0, startIndex - pageSize)
+          cursorIndex = Math.min(startIndex + pageSize - 1, projects.length - 1)
+          render()
+          return
+        }
+        // Check for End: \x1b[F or \x1b[4~
+        else if (
+          (fullData.length >= 3 && fullData[2] === "F") ||
+          (fullData.length >= 5 && fullData[2] === "4" && fullData[3] === "~")
+        ) {
+          // End - go forward one full page
+          escapeSequence = ""
+          startIndex = Math.min(
+            projects.length - pageSize,
+            startIndex + pageSize
+          )
+          cursorIndex = Math.min(startIndex + pageSize - 1, projects.length - 1)
+          render()
+          return
+        }
+        // Check for arrow keys
+        else if (fullData.length >= 3 && fullData[2] === "A") {
           // Up arrow - complete sequence
           escapeSequence = ""
           cursorIndex = Math.max(0, cursorIndex - 1)
@@ -736,15 +893,24 @@ export async function promptProjectsWithDynamicUpdates(
           render()
           return
         } else if (fullData.length === 2) {
-          // Still building - have "\x1b[" but waiting for A/B
+          // Still building - have "\x1b[" but waiting for A/B/H/F/1/4
           escapeSequence = fullData
           return
+        } else if (fullData.length >= 3 && fullData.length < 5) {
+          // Could be building Home/End sequence (\x1b[1 or \x1b[4) - waiting for "~"
+          if (fullData[2] === "1" || fullData[2] === "4") {
+            escapeSequence = fullData
+            return
+          }
+          // Invalid sequence, reset
+          escapeSequence = ""
         } else {
           // Invalid sequence, reset
           escapeSequence = ""
         }
       } else if (
         !isOpenMenuActive &&
+        !isSettingsMenuActive &&
         fullData.length === 1 &&
         fullData[0] === "\x1b"
       ) {
@@ -827,10 +993,45 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle ESC to clear active filter (when not in search mode and not part of arrow key sequence)
+      // Handle settings menu mode
+      if (isSettingsMenuActive) {
+        // Handle ESC to cancel
+        if (data === "\x1b") {
+          isSettingsMenuActive = false
+          render()
+          return
+        }
+
+        // Handle '1' to change team
+        if (data === "1") {
+          process.stdin.removeListener("data", handleData)
+          process.stdin.setRawMode(wasRawMode || false)
+          process.stdin.pause()
+          process.stdout.write("\x1b[2J\x1b[H")
+          resolve({
+            projectIds: [],
+            action: "change-team",
+          })
+          return
+        }
+
+        // Ignore other keys in settings menu
+        return
+      }
+
+      // Handle 't' to open settings menu
+      if (data === "t" && !isSearching && !isOpenMenuActive) {
+        isSettingsMenuActive = true
+        render()
+        return
+      }
+
+      // Handle ESC to clear active filter (when not in search mode, menus, and not part of arrow key sequence)
       if (
         data === "\x1b" &&
         !isSearching &&
+        !isOpenMenuActive &&
+        !isSettingsMenuActive &&
         activeFilterQuery &&
         escapeSequence === ""
       ) {
@@ -880,13 +1081,13 @@ export async function promptProjectsWithDynamicUpdates(
           | "open-logs"
           | null = null
 
-        if (data === "o") {
+        if (data === "1") {
           action = "open"
-        } else if (data === "e") {
+        } else if (data === "2") {
           action = "open-settings"
-        } else if (data === "p") {
+        } else if (data === "3") {
           action = "open-deployments"
-        } else if (data === "l") {
+        } else if (data === "4") {
           action = "open-logs"
         } else {
           // Invalid key, ignore
