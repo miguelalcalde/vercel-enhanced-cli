@@ -45,6 +45,43 @@ export interface VercelUser {
   name?: string
 }
 
+export interface VercelDomain {
+  name: string
+  apexName: string
+  projectId: string
+  redirect?: string | null
+  redirectStatusCode?: number | null
+  gitBranch?: string | null
+  customEnvironmentId?: string | null
+  updatedAt: number
+  createdAt: number
+  verified: boolean
+  verification?: Array<{
+    type: string
+    domain: string
+    value: string
+    reason: string
+  }>
+}
+
+export interface VercelProjectDetails extends VercelProject {
+  framework?: string | null
+  buildCommand?: string | null
+  devCommand?: string | null
+  installCommand?: string | null
+  outputDirectory?: string | null
+  rootDirectory?: string | null
+  link?: {
+    type: string
+    repo: string
+    repoId: number
+    org: string
+    repoOwner: string
+    repoName: string
+    productionBranch?: string
+  }
+}
+
 interface VercelApiResponse<T> {
   [key: string]: T | T[] | any
 }
@@ -299,5 +336,43 @@ export class VercelApi {
     await this.request(endpoint, {
       method: "DELETE",
     })
+  }
+
+  /**
+   * Get detailed information about a specific project
+   */
+  async getProjectDetails(
+    projectId: string,
+    teamId?: string | null
+  ): Promise<VercelProjectDetails> {
+    const params = new URLSearchParams()
+    if (teamId) {
+      params.append("teamId", teamId)
+    }
+
+    const endpoint = `/v9/projects/${projectId}${
+      params.toString() ? `?${params.toString()}` : ""
+    }`
+    const response = await this.request<VercelProjectDetails>(endpoint)
+    return response
+  }
+
+  /**
+   * Get all domains associated with a project
+   */
+  async getProjectDomains(
+    projectId: string,
+    teamId?: string | null
+  ): Promise<VercelDomain[]> {
+    const params = new URLSearchParams()
+    if (teamId) {
+      params.append("teamId", teamId)
+    }
+
+    const endpoint = `/v9/projects/${projectId}/domains${
+      params.toString() ? `?${params.toString()}` : ""
+    }`
+    const response = await this.request<{ domains: VercelDomain[] }>(endpoint)
+    return response.domains || []
   }
 }

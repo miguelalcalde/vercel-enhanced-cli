@@ -16,6 +16,7 @@ import {
   ProjectWithMetadata,
 } from "../ui/renderProjects.js"
 import { logError, getErrorLogPath } from "../utils/errorLogger.js"
+import { showProjectDetails } from "./projectDetails.js"
 import chalk from "chalk"
 import open from "open"
 
@@ -290,6 +291,31 @@ export async function projectsCommand(providedToken?: string) {
             break
           }
           projects.sort((a, b) => b.updatedAt - a.updatedAt)
+        }
+      } else if (action === "edit") {
+        // Show project details for the selected project
+        // Edit action requires exactly one project
+        if (projectIds.length === 0) {
+          console.log(chalk.yellow("No project selected."))
+          // Return to selection
+        } else if (projectIds.length > 1) {
+          console.log(
+            chalk.yellow("Please select only one project to view details.")
+          )
+          // Return to selection
+        } else {
+          const selectedProject = projectsWithMetadata.find(
+            (p) => p.id === projectIds[0]
+          )
+          if (selectedProject) {
+            await showProjectDetails(
+              selectedProject,
+              api,
+              scopeTeamId,
+              scopeSlug
+            )
+            // Return to selection after viewing details
+          }
         }
       } else if (action === "change-team") {
         // Show team selection prompt

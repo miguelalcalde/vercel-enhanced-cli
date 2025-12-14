@@ -519,6 +519,7 @@ export async function promptProjectsWithDynamicUpdates(
     | "open-deployments"
     | "open-logs"
     | "delete"
+    | "edit"
     | "change-team"
     | null
 }> {
@@ -705,7 +706,7 @@ export async function promptProjectsWithDynamicUpdates(
       // Footer with navigation hints
       process.stdout.write(
         chalk.gray(
-          "\n↑↓ navigate  space select  a all  i invert  d delete  o open  s search  t settings\n"
+          "\n↑↓ navigate  space select  a all  i invert  d delete  o open  e edit  s search  t settings\n"
         )
       )
     }
@@ -1051,6 +1052,43 @@ export async function promptProjectsWithDynamicUpdates(
           projectIds: Array.from(selected),
           action: "delete",
         })
+        return
+      }
+
+      // Handle 'e' for edit/view details - requires single selection
+      if (data === "e") {
+        const projectToEdit =
+          selected.size === 1
+            ? Array.from(selected)[0]
+            : selected.size === 0 && projects.length > 0
+            ? projects[cursorIndex].value
+            : null
+
+        if (projectToEdit) {
+          process.stdin.removeListener("data", handleData)
+          process.stdin.setRawMode(wasRawMode || false)
+          process.stdin.pause()
+          process.stdout.write("\x1b[2J\x1b[H")
+          resolve({
+            projectIds: [projectToEdit],
+            action: "edit",
+          })
+          return
+        } else if (selected.size > 1) {
+          // Show message that only one project can be selected for edit
+          // We'll show this by briefly rendering a message, but for now just proceed
+          // The projects.ts handler will show the error message
+          process.stdin.removeListener("data", handleData)
+          process.stdin.setRawMode(wasRawMode || false)
+          process.stdin.pause()
+          process.stdout.write("\x1b[2J\x1b[H")
+          resolve({
+            projectIds: Array.from(selected),
+            action: "edit",
+          })
+          return
+        }
+        // If no project available, ignore the keypress
         return
       }
 
