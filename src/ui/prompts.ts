@@ -222,14 +222,6 @@ export async function promptProjectsWithActions(
     const render = () => {
       // Clear screen and move cursor to top
       process.stdout.write("\x1b[2J\x1b[H")
-      process.stdout.write(
-        chalk.bold("Select projects (space to select, d delete, o open):\n")
-      )
-      process.stdout.write(
-        chalk.gray(
-          "↑↓ navigate  space select  a all  i invert  d delete  o open\n"
-        )
-      )
       process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
       // Add table headers
       process.stdout.write(
@@ -280,6 +272,13 @@ export async function promptProjectsWithActions(
           chalk.green(`\n${selected.size} project(s) selected\n`)
         )
       }
+
+      // Footer with navigation hints
+      process.stdout.write(
+        chalk.gray(
+          "\n↑↓ navigate  space select  a all  i invert  d delete  o open\n"
+        )
+      )
     }
 
     const handleData = (chunk: Buffer) => {
@@ -629,19 +628,10 @@ export async function promptProjectsWithDynamicUpdates(
         )
         process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
       } else {
-        const headerText = activeFilterQuery
-          ? `Select projects (filtered: "${activeFilterQuery}")`
-          : "Select projects (space to select, d delete, o open, s search, t settings)"
-        process.stdout.write(chalk.bold(`${headerText}:\n`))
-        process.stdout.write(
-          chalk.gray(
-            "↑↓ navigate  space select  a all  i invert  d delete  o open  s search  t settings\n"
-          )
-        )
         if (activeFilterQuery) {
           process.stdout.write(
             chalk.blue(
-              `  Filter active: "${activeFilterQuery}" (${
+              `Filter active: "${activeFilterQuery}" (${
                 projects.length
               } match${
                 projects.length !== 1 ? "es" : ""
@@ -711,6 +701,13 @@ export async function promptProjectsWithDynamicUpdates(
           )
         )
       }
+
+      // Footer with navigation hints
+      process.stdout.write(
+        chalk.gray(
+          "\n↑↓ navigate  space select  a all  i invert  d delete  o open  s search  t settings\n"
+        )
+      )
     }
 
     /**
