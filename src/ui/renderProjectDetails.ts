@@ -107,3 +107,4 @@ export function formatTimeAgo(timestamp: number): string {
     return `${diffDays} day${diffDays !== 1 ? "s" : ""} ago`;
   }
 }
+
