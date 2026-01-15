@@ -614,10 +614,8 @@ export async function promptProjectsWithDynamicUpdates(
     const wasRawMode = process.stdin.isRaw
     let escapeSequence = ""
 
-    // Search state
-    let isSearching = false
-    let searchQuery = "" // Current input while searching
-    let activeFilterQuery = "" // Applied filter (persists after Enter)
+    // Search state - search is always active (search-first interaction model)
+    let searchQuery = "" // Current search/filter query (instantly applied)
     const allProjects = allProjectsWithMetadata || []
     const formatProject =
       formatProjectOptionFn || ((p: ProjectWithMetadata) => p.name)
@@ -737,37 +735,24 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Show search input if in search mode
-      if (isSearching) {
-        eraseLine()
+      // Always show search input area (search-first interaction model)
+      eraseLine()
+      if (searchQuery) {
         process.stdout.write(
-          chalk.bold.cyan(`Search: ${searchQuery}${chalk.inverse(" ")}\n`)
+          chalk.bold.cyan(`Search: ${searchQuery}`) +
+            chalk.gray(` (${projects.length} match${projects.length !== 1 ? "es" : ""})`) +
+            chalk.inverse(" ") +
+            "\n"
         )
-        currentLine++
-        eraseLine()
-        process.stdout.write(
-          chalk.gray("Type to search, Enter to apply, ESC to clear\n")
-        )
-        currentLine++
-        eraseLine()
-        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
-        currentLine++
       } else {
-        if (activeFilterQuery) {
-          eraseLine()
-          process.stdout.write(
-            chalk.blue(
-              `Filter active: "${activeFilterQuery}" (${projects.length} match${
-                projects.length !== 1 ? "es" : ""
-              }) - Press ESC to clear\n`
-            )
-          )
-          currentLine++
-        }
-        eraseLine()
-        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
-        currentLine++
+        process.stdout.write(
+          chalk.gray("Type to search...") + chalk.inverse(" ") + "\n"
+        )
       }
+      currentLine++
+      eraseLine()
+      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+      currentLine++
       // Add table headers
       eraseLine()
       process.stdout.write(
@@ -832,28 +817,13 @@ export async function promptProjectsWithDynamicUpdates(
         currentLine += 2
       }
 
-      // Show search status (only when actively searching, not when filter is applied)
-      if (isSearching && searchQuery.trim()) {
-        eraseLine()
-        process.stdout.write("\n")
-        eraseLine()
-        process.stdout.write(
-          chalk.blue(
-            `Searching for: "${searchQuery}" (${projects.length} match${
-              projects.length !== 1 ? "es" : ""
-            })\n`
-          )
-        )
-        currentLine += 2
-      }
-
-      // Footer with navigation hints
+      // Footer with navigation hints (search-first interaction model)
       eraseLine()
       process.stdout.write("\n")
       eraseLine()
       process.stdout.write(
         chalk.gray(
-          "↑↓ navigate  space select  a all  i invert  d delete  o open  e edit  s search  t settings\n"
+          "Type to search | ↑↓ navigate | ENTER select | ^A all | ^I invert | ^D delete | ^O open | ^E edit | ^S settings\n"
         )
       )
       currentLine += 2
@@ -869,13 +839,11 @@ export async function promptProjectsWithDynamicUpdates(
      * Filter projects based on search query
      */
     const filterProjects = (query: string): ProjectOption[] => {
-      // Use activeFilterQuery if no query provided (when filter is applied)
-      const filterToUse = query || activeFilterQuery
-      if (!filterToUse.trim() || allProjects.length === 0) {
+      if (!query.trim() || allProjects.length === 0) {
         return initialProjects
       }
 
-      const searchTerm = filterToUse.toLowerCase().trim()
+      const searchTerm = query.toLowerCase().trim()
       const filtered = allProjects.filter((project) => {
         // Search by project name
         const nameMatch = project.name.toLowerCase().includes(searchTerm)
@@ -905,8 +873,8 @@ export async function promptProjectsWithDynamicUpdates(
 
     // Update function that can be called externally
     const updateProjects = (newProjects: ProjectOption[]) => {
-      // Don't update if we're in search mode or have an active filter (search filtering takes precedence)
-      if (isSearching || activeFilterQuery) {
+      // Don't update if we have an active search filter (search filtering takes precedence)
+      if (searchQuery) {
         return
       }
 
@@ -946,9 +914,7 @@ export async function promptProjectsWithDynamicUpdates(
      * Apply search filter and update displayed projects
      */
     const applySearchFilter = () => {
-      // Use searchQuery if actively searching, otherwise use activeFilterQuery
-      const queryToUse = isSearching ? searchQuery : activeFilterQuery
-      const filtered = filterProjects(queryToUse)
+      const filtered = filterProjects(searchQuery)
 
       // Preserve cursor position relative to project ID if possible
       const currentProjectId =
@@ -1074,7 +1040,7 @@ export async function promptProjectsWithDynamicUpdates(
         escapeSequence = ""
       }
 
-      // Handle Ctrl+C
+      // Handle Ctrl+C - exit
       if (data === "\x03" || (data.length === 1 && data.charCodeAt(0) === 3)) {
         process.stdin.removeListener("data", handleData)
         process.stdin.setRawMode(wasRawMode || false)
@@ -1082,67 +1048,6 @@ export async function promptProjectsWithDynamicUpdates(
         restoreScreen()
         process.stdout.write("\n")
         resolve({ projectIds: [], action: null })
-        return
-      }
-
-      // Handle search mode
-      if (isSearching) {
-        // Handle Escape to clear search completely
-        if (data === "\x1b") {
-          isSearching = false
-          searchQuery = ""
-          activeFilterQuery = ""
-          // Restore full project list
-          projects = [...initialProjects]
-          cursorIndex = 0
-          startIndex = 0
-          render()
-          return
-        }
-
-        // Handle Enter to apply search (keep filter active, exit input mode)
-        if (data === "\r" || data === "\n") {
-          activeFilterQuery = searchQuery.trim()
-          isSearching = false
-          // Apply the filter one more time to ensure it's set correctly
-          applySearchFilter()
-          return
-        }
-
-        // Handle backspace/delete
-        if (
-          data === "\x7f" ||
-          data === "\b" ||
-          (data.length === 1 && data.charCodeAt(0) === 127)
-        ) {
-          if (searchQuery.length > 0) {
-            searchQuery = searchQuery.slice(0, -1)
-            applySearchFilter()
-          }
-          return
-        }
-
-        // Handle regular character input (printable ASCII)
-        if (
-          data.length === 1 &&
-          data.charCodeAt(0) >= 32 &&
-          data.charCodeAt(0) <= 126
-        ) {
-          searchQuery += data
-          applySearchFilter()
-          return
-        }
-
-        // Ignore other keys in search mode
-        return
-      }
-
-      // Handle 's' to enter search mode (only if search is supported)
-      if (data === "s" && allProjects.length > 0 && formatProjectOptionFn) {
-        isSearching = true
-        // Pre-fill with active filter if one exists
-        searchQuery = activeFilterQuery
-        render()
         return
       }
 
@@ -1173,23 +1078,22 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle 't' to open settings menu
-      if (data === "t" && !isSearching && !isOpenMenuActive) {
+      // Handle CTRL+S to open settings menu (\x13)
+      if (data === "\x13" && !isOpenMenuActive) {
         isSettingsMenuActive = true
         render()
         return
       }
 
-      // Handle ESC to clear active filter (when not in search mode, menus, and not part of arrow key sequence)
+      // Handle ESC to clear search filter (when not in menus and not part of arrow key sequence)
       if (
         data === "\x1b" &&
-        !isSearching &&
         !isOpenMenuActive &&
         !isSettingsMenuActive &&
-        activeFilterQuery &&
+        searchQuery &&
         escapeSequence === ""
       ) {
-        activeFilterQuery = ""
+        searchQuery = ""
         // Restore full project list
         projects = [...initialProjects]
         cursorIndex = 0
@@ -1198,8 +1102,8 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle 'd' for delete - immediately trigger if projects selected
-      if (data === "d" && selected.size > 0) {
+      // Handle CTRL+D for delete (\x04) - immediately trigger if projects selected
+      if (data === "\x04" && selected.size > 0) {
         process.stdin.removeListener("data", handleData)
         process.stdin.setRawMode(wasRawMode || false)
         process.stdin.pause()
@@ -1212,8 +1116,8 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle 'e' for edit/view details - requires single selection
-      if (data === "e") {
+      // Handle CTRL+E for edit/view details (\x05) - requires single selection
+      if (data === "\x05") {
         const projectToEdit =
           selected.size === 1
             ? Array.from(selected)[0]
@@ -1301,8 +1205,8 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle 'o' to open projects
-      if (data === "o") {
+      // Handle CTRL+O to open projects (\x0F)
+      if (data === "\x0F") {
         // If multiple projects are selected, open them all directly
         if (selected.size > 1) {
           process.stdin.removeListener("data", handleData)
@@ -1322,8 +1226,8 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle space to toggle selection
-      if (data === " ") {
+      // Handle ENTER to toggle selection (\r or \n)
+      if (data === "\r" || data === "\n") {
         if (projects.length > 0 && cursorIndex < projects.length) {
           const project = projects[cursorIndex]
           if (selected.has(project.value)) {
@@ -1336,15 +1240,15 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle 'a' to select all
-      if (data === "a") {
+      // Handle CTRL+A to select all (\x01)
+      if (data === "\x01") {
         projects.forEach((p) => selected.add(p.value))
         render()
         return
       }
 
-      // Handle 'i' to invert selection
-      if (data === "i") {
+      // Handle CTRL+I to invert selection (\x09)
+      if (data === "\x09") {
         projects.forEach((p) => {
           if (selected.has(p.value)) {
             selected.delete(p.value)
@@ -1353,6 +1257,32 @@ export async function promptProjectsWithDynamicUpdates(
           }
         })
         render()
+        return
+      }
+
+      // Handle backspace/delete for search query
+      if (
+        data === "\x7f" ||
+        data === "\b" ||
+        (data.length === 1 && data.charCodeAt(0) === 127)
+      ) {
+        if (searchQuery.length > 0) {
+          searchQuery = searchQuery.slice(0, -1)
+          applySearchFilter()
+        }
+        return
+      }
+
+      // Handle printable character input for search (search-first interaction)
+      // Only handle if not a control character and not part of an escape sequence
+      if (
+        data.length === 1 &&
+        data.charCodeAt(0) >= 32 &&
+        data.charCodeAt(0) <= 126 &&
+        escapeSequence === ""
+      ) {
+        searchQuery += data
+        applySearchFilter()
         return
       }
 
