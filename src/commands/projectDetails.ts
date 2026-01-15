@@ -11,6 +11,21 @@ import {
   formatTimeAgo,
 } from "../ui/renderProjectDetails.js";
 import { logError } from "../utils/errorLogger.js";
+import {
+  getCached,
+  setCache,
+  invalidateCache,
+} from "../utils/cache.js";
+
+/** Cache key prefix for project details */
+const CACHE_KEY_DETAILS = "project-details:";
+/** Cache key prefix for project domains */
+const CACHE_KEY_DOMAINS = "project-domains:";
+
+interface CachedProjectData {
+  projectDetails: VercelProjectDetails;
+  domains: VercelDomain[];
+}
 
 interface SelectableItem {
   id: string;
@@ -18,6 +33,53 @@ interface SelectableItem {
   type: "domain" | "repo";
   url: string;
   displayIndex: number; // Index in the displayed list
+}
+
+/**
+ * Fetch project details and domains, using cache if available
+ */
+async function fetchProjectData(
+  project: VercelProject,
+  api: VercelApi,
+  teamId: string | null,
+  forceRefresh = false,
+): Promise<CachedProjectData> {
+  const cacheKey = `${CACHE_KEY_DETAILS}${project.id}`;
+
+  // Check cache first (unless force refresh)
+  if (!forceRefresh) {
+    const cached = getCached<CachedProjectData>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  // Fetch project details and domains in parallel
+  const [projectDetails, domains] = await Promise.all([
+    api.getProjectDetails(project.id, teamId).catch((error: unknown) => {
+      logError(error instanceof Error ? error : new Error(String(error)), {
+        operation: "getProjectDetails",
+        projectId: project.id,
+        teamId,
+      });
+      return project as VercelProjectDetails;
+    }),
+    api.getProjectDomains(project.id, teamId).catch((error: unknown) => {
+      logError(error instanceof Error ? error : new Error(String(error)), {
+        operation: "getProjectDomains",
+        projectId: project.id,
+        teamId,
+      });
+      return [] as VercelDomain[];
+    }),
+  ]);
+
+  const data: CachedProjectData = { projectDetails, domains };
+
+  // Store in cache
+  setCache(cacheKey, data);
+
+  return data;
 }
 
 /**
@@ -30,25 +92,12 @@ export async function showProjectDetails(
   scopeSlug: string,
 ): Promise<void> {
   try {
-    // Fetch project details and domains in parallel
-    const [projectDetails, domains] = await Promise.all([
-      api.getProjectDetails(project.id, teamId).catch((error: unknown) => {
-        logError(error instanceof Error ? error : new Error(String(error)), {
-          operation: "getProjectDetails",
-          projectId: project.id,
-          teamId,
-        });
-        return project as VercelProjectDetails;
-      }),
-      api.getProjectDomains(project.id, teamId).catch((error: unknown) => {
-        logError(error instanceof Error ? error : new Error(String(error)), {
-          operation: "getProjectDomains",
-          projectId: project.id,
-          teamId,
-        });
-        return [] as VercelDomain[];
-      }),
-    ]);
+    // Fetch project details (with caching)
+    const { projectDetails, domains } = await fetchProjectData(
+      project,
+      api,
+      teamId,
+    );
 
     // Build selectable items list
     const selectableItems: SelectableItem[] = [];
@@ -95,6 +144,8 @@ export async function showProjectDetails(
       domains,
       selectableItems,
       scopeSlug,
+      api,
+      teamId,
     );
   } catch (error) {
     logError(error instanceof Error ? error : new Error(String(error)), {
@@ -120,6 +171,8 @@ async function showInteractiveProjectDetails(
   domains: VercelDomain[],
   selectableItems: SelectableItem[],
   scopeSlug: string,
+  api: VercelApi,
+  teamId: string | null,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let cursorIndex = 0;
@@ -261,6 +314,7 @@ async function showInteractiveProjectDetails(
       }
       hints.push("1 dashboard");
       hints.push("2 settings");
+      hints.push("3 refresh");
       hints.push("ESC back");
       console.log(chalk.gray(hints.join("  ")));
     };
@@ -342,6 +396,8 @@ async function showInteractiveProjectDetails(
                 domains,
                 selectableItems,
                 scopeSlug,
+                api,
+                teamId,
               )
                 .then(resolve)
                 .catch(reject);
@@ -360,6 +416,8 @@ async function showInteractiveProjectDetails(
                 domains,
                 selectableItems,
                 scopeSlug,
+                api,
+                teamId,
               )
                 .then(resolve)
                 .catch(reject);
@@ -396,6 +454,8 @@ async function showInteractiveProjectDetails(
                 domains,
                 selectableItems,
                 scopeSlug,
+                api,
+                teamId,
               )
                 .then(resolve)
                 .catch(reject);
@@ -414,6 +474,8 @@ async function showInteractiveProjectDetails(
                 domains,
                 selectableItems,
                 scopeSlug,
+                api,
+                teamId,
               )
                 .then(resolve)
                 .catch(reject);
@@ -440,6 +502,8 @@ async function showInteractiveProjectDetails(
                 domains,
                 selectableItems,
                 scopeSlug,
+                api,
+                teamId,
               )
                 .then(resolve)
                 .catch(reject);
@@ -458,6 +522,8 @@ async function showInteractiveProjectDetails(
                 domains,
                 selectableItems,
                 scopeSlug,
+                api,
+                teamId,
               )
                 .then(resolve)
                 .catch(reject);
@@ -484,6 +550,8 @@ async function showInteractiveProjectDetails(
                 domains,
                 selectableItems,
                 scopeSlug,
+                api,
+                teamId,
               )
                 .then(resolve)
                 .catch(reject);
@@ -502,11 +570,32 @@ async function showInteractiveProjectDetails(
                 domains,
                 selectableItems,
                 scopeSlug,
+                api,
+                teamId,
               )
                 .then(resolve)
                 .catch(reject);
             }, 1500);
           });
+        return;
+      }
+
+      // Handle '3' to refresh project details
+      if (data === "3") {
+        process.stdin.removeListener("data", handleData);
+        process.stdin.setRawMode(wasRawMode || false);
+        process.stdin.pause();
+        process.stdout.write("\x1b[2J\x1b[H");
+
+        console.log(chalk.blue("🔄 Refreshing project details..."));
+
+        // Invalidate cache for this project
+        invalidateCache(`${CACHE_KEY_DETAILS}${project.id}`);
+
+        // Re-fetch and re-show project details
+        showProjectDetails(project, api, teamId, scopeSlug)
+          .then(resolve)
+          .catch(reject);
         return;
       }
     };

@@ -17,6 +17,7 @@ import {
   ProjectWithMetadata,
 } from "../ui/renderProjects.js"
 import { logError, getErrorLogPath } from "../utils/errorLogger.js"
+import { invalidateCachePrefix } from "../utils/cache.js"
 import { showProjectDetails } from "./projectDetails.js"
 import chalk from "chalk"
 import open from "open"
@@ -372,6 +373,22 @@ export async function projectsCommand(providedToken?: string) {
           console.log(chalk.green(`✓ Using scope: ${scopeName}\n`))
         }
         // Return to selection (whether team changed or not)
+      } else if (action === "refresh") {
+        // Clear all cached project data
+        invalidateCachePrefix("project-")
+        invalidateCachePrefix("detail-view:")
+
+        // Re-fetch projects
+        console.log(chalk.blue("\n🔄 Refreshing projects..."))
+        projects = await api.listProjects(scopeTeamId)
+        if (projects.length === 0) {
+          console.log(chalk.yellow("No projects found."))
+          continueLoop = false
+          break
+        }
+        projects.sort((a, b) => b.updatedAt - a.updatedAt)
+        console.log(chalk.green(`✓ Refreshed ${projects.length} project(s)\n`))
+        // Return to selection with fresh data
       }
     }
   } catch (error) {

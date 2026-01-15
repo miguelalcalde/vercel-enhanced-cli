@@ -13,6 +13,14 @@ import {
   hideCursor,
   eraseLine,
 } from "./terminalRenderer.js"
+import {
+  getCached,
+  setCache,
+  invalidateCachePrefix,
+} from "../utils/cache.js"
+
+/** Cache key prefix for detail view data */
+const CACHE_KEY_DETAIL_VIEW = "detail-view:"
 
 /**
  * Data fetched for detail view
@@ -524,6 +532,7 @@ export async function promptProjectsWithDynamicUpdates(
     | "delete"
     | "edit"
     | "change-team"
+    | "refresh"
     | null
 }> {
   // Check terminal capabilities
@@ -632,7 +641,11 @@ export async function promptProjectsWithDynamicUpdates(
     const render = () => {
       // Determine current view state
       const currentViewState: "projects" | "settings" | "detail" =
-        isSettingsMenuActive ? "settings" : isDetailViewActive ? "detail" : "projects"
+        isSettingsMenuActive
+          ? "settings"
+          : isDetailViewActive
+          ? "detail"
+          : "projects"
 
       // For menu transitions, clear screen completely
       // For same view updates, use cursor positioning
@@ -686,15 +699,24 @@ export async function promptProjectsWithDynamicUpdates(
       // Show enhanced detail view if active
       if (isDetailViewActive) {
         // Get the project metadata
-        const projectMeta = allProjects.find((p) => p.id === detailViewProjectId)
-        const projectName = projectMeta?.name || projects.find((p) => p.value === detailViewProjectId)?.description || "Project"
+        const projectMeta = allProjects.find(
+          (p) => p.id === detailViewProjectId
+        )
+        const projectName =
+          projectMeta?.name ||
+          projects.find((p) => p.value === detailViewProjectId)?.description ||
+          "Project"
         const state = projectMeta?.lastDeployment?.state
         const branch = (projectMeta?.link as any)?.productionBranch || "main"
         const createdAt = projectMeta?.createdAt
         const creator = projectMeta?.lastDeployment?.creator
         const creatorName = creator?.username || creator?.email || "unknown"
         const repoOrg = projectMeta?.link?.org || projectMeta?.link?.repoOwner
-        const repoName = projectMeta?.link?.repoName || (projectMeta?.link?.repo ? projectMeta.link.repo.split("/").pop() : null)
+        const repoName =
+          projectMeta?.link?.repoName ||
+          (projectMeta?.link?.repo
+            ? projectMeta.link.repo.split("/").pop()
+            : null)
 
         // Header with project name and state
         eraseLine()
@@ -702,7 +724,8 @@ export async function promptProjectsWithDynamicUpdates(
         currentLine++
         eraseLine()
         const stateStr = formatState(state)
-        const headerLine = `  ${chalk.bold.white(projectName)}`.padEnd(70) + stateStr
+        const headerLine =
+          `  ${chalk.bold.white(projectName)}`.padEnd(70) + stateStr
         process.stdout.write(headerLine + "\n")
         currentLine++
         eraseLine()
@@ -712,62 +735,111 @@ export async function promptProjectsWithDynamicUpdates(
         // Loading state
         if (detailViewData?.loading) {
           eraseLine()
-          process.stdout.write(chalk.blue("  Loading project details...") + "\n")
+          process.stdout.write(
+            chalk.blue("  Loading project details...") + "\n"
+          )
           currentLine++
         } else {
           // URLs (domains)
           eraseLine()
           if (detailViewData?.domains && detailViewData.domains.length > 0) {
-            process.stdout.write(chalk.gray("  URLs         ") + chalk.cyan(`https://${detailViewData.domains[0].name}`) + "\n")
+            process.stdout.write(
+              chalk.gray("  URLs         ") +
+                chalk.cyan(`https://${detailViewData.domains[0].name}`) +
+                "\n"
+            )
             currentLine++
             // Show additional domains
-            for (let i = 1; i < Math.min(detailViewData.domains.length, 3); i++) {
+            for (
+              let i = 1;
+              i < Math.min(detailViewData.domains.length, 3);
+              i++
+            ) {
               eraseLine()
-              process.stdout.write(chalk.gray("               ") + chalk.cyan(`https://${detailViewData.domains[i].name}`) + "\n")
+              process.stdout.write(
+                chalk.gray("               ") +
+                  chalk.cyan(`https://${detailViewData.domains[i].name}`) +
+                  "\n"
+              )
               currentLine++
             }
             if (detailViewData.domains.length > 3) {
               eraseLine()
-              process.stdout.write(chalk.gray(`               ... and ${detailViewData.domains.length - 3} more`) + "\n")
+              process.stdout.write(
+                chalk.gray(
+                  `               ... and ${
+                    detailViewData.domains.length - 3
+                  } more`
+                ) + "\n"
+              )
               currentLine++
             }
           } else {
-            process.stdout.write(chalk.gray("  URLs         ") + chalk.gray("No domains configured") + "\n")
+            process.stdout.write(
+              chalk.gray("  URLs         ") +
+                chalk.gray("No domains configured") +
+                "\n"
+            )
             currentLine++
           }
 
           // Branch
           eraseLine()
-          process.stdout.write(chalk.gray("  Branch       ") + chalk.white(branch) + "\n")
+          process.stdout.write(
+            chalk.gray("  Branch       ") + chalk.white(branch) + "\n"
+          )
           currentLine++
 
           // Commit message
           eraseLine()
           if (detailViewData?.commitMessage) {
-            const truncatedCommit = detailViewData.commitMessage.length > 50
-              ? detailViewData.commitMessage.substring(0, 47) + "..."
-              : detailViewData.commitMessage
-            process.stdout.write(chalk.gray("  Commit       ") + chalk.white(`"${truncatedCommit}"`) + "\n")
+            const truncatedCommit =
+              detailViewData.commitMessage.length > 50
+                ? detailViewData.commitMessage.substring(0, 47) + "..."
+                : detailViewData.commitMessage
+            process.stdout.write(
+              chalk.gray("  Commit       ") +
+                chalk.white(`"${truncatedCommit}"`) +
+                "\n"
+            )
           } else {
-            process.stdout.write(chalk.gray("  Commit       ") + chalk.gray("No commit info") + "\n")
+            process.stdout.write(
+              chalk.gray("  Commit       ") +
+                chalk.gray("No commit info") +
+                "\n"
+            )
           }
           currentLine++
 
           // Created info
           eraseLine()
           if (createdAt) {
-            process.stdout.write(chalk.gray("  Created      ") + chalk.white(`${formatRelativeTime(createdAt)} by @${creatorName}`) + "\n")
+            process.stdout.write(
+              chalk.gray("  Created      ") +
+                chalk.white(
+                  `${formatRelativeTime(createdAt)} by @${creatorName}`
+                ) +
+                "\n"
+            )
           } else {
-            process.stdout.write(chalk.gray("  Created      ") + chalk.gray("Unknown") + "\n")
+            process.stdout.write(
+              chalk.gray("  Created      ") + chalk.gray("Unknown") + "\n"
+            )
           }
           currentLine++
 
           // Repository
           eraseLine()
           if (repoOrg && repoName) {
-            process.stdout.write(chalk.gray("  Repository   ") + chalk.blue(`https://github.com/${repoOrg}/${repoName}`) + "\n")
+            process.stdout.write(
+              chalk.gray("  Repository   ") +
+                chalk.blue(`https://github.com/${repoOrg}/${repoName}`) +
+                "\n"
+            )
           } else {
-            process.stdout.write(chalk.gray("  Repository   ") + chalk.gray("Not connected") + "\n")
+            process.stdout.write(
+              chalk.gray("  Repository   ") + chalk.gray("Not connected") + "\n"
+            )
           }
           currentLine++
         }
@@ -800,7 +872,9 @@ export async function promptProjectsWithDynamicUpdates(
         eraseLine()
         process.stdout.write("\n")
         eraseLine()
-        process.stdout.write(chalk.gray("TAB cycle | ENTER action | ←/ESC back\n"))
+        process.stdout.write(
+          chalk.gray("TAB cycle | ENTER action | ←/ESC back\n")
+        )
         currentLine += 2
 
         // Erase remaining lines if content shrunk
@@ -816,7 +890,9 @@ export async function promptProjectsWithDynamicUpdates(
       if (searchQuery) {
         process.stdout.write(
           chalk.bold.cyan(`Search: ${searchQuery}`) +
-            chalk.gray(` (${projects.length} match${projects.length !== 1 ? "es" : ""})`) +
+            chalk.gray(
+              ` (${projects.length} match${projects.length !== 1 ? "es" : ""})`
+            ) +
             chalk.inverse(" ") +
             "\n"
         )
@@ -899,7 +975,7 @@ export async function promptProjectsWithDynamicUpdates(
       eraseLine()
       process.stdout.write(
         chalk.gray(
-          "Type to search | ↑↓ navigate | → details | ← back | ENTER select | ^A all | ^D delete | ^S settings\n"
+          "Type to search | ↑↓ navigate | → details | ← back | ENTER select | ^A all | ^D delete | ^R refresh | ^S settings\n"
         )
       )
       currentLine += 2
@@ -1061,7 +1137,12 @@ export async function promptProjectsWithDynamicUpdates(
         // Handle RIGHT ARROW - enter detail view (only in project list)
         if (fullData.length >= 3 && fullData[2] === "C") {
           escapeSequence = ""
-          if (!isDetailViewActive && !isSettingsMenuActive && projects.length > 0 && cursorIndex < projects.length) {
+          if (
+            !isDetailViewActive &&
+            !isSettingsMenuActive &&
+            projects.length > 0 &&
+            cursorIndex < projects.length
+          ) {
             // Enter detail view for project at cursor
             const projectId = projects[cursorIndex].value
             isDetailViewActive = true
@@ -1070,10 +1151,23 @@ export async function promptProjectsWithDynamicUpdates(
             detailViewData = { domains: [], loading: true }
             render()
 
-            // Fetch detail data asynchronously
-            if (fetchDetailData) {
+            // Check cache first, then fetch detail data asynchronously
+            const cacheKey = `${CACHE_KEY_DETAIL_VIEW}${projectId}`
+            const cachedData = getCached<{ domains: VercelDomain[]; commitMessage?: string }>(cacheKey)
+
+            if (cachedData) {
+              // Use cached data
+              detailViewData = {
+                domains: cachedData.domains,
+                commitMessage: cachedData.commitMessage,
+                loading: false,
+              }
+              render()
+            } else if (fetchDetailData) {
               fetchDetailData(projectId)
                 .then((data) => {
+                  // Store in cache
+                  setCache(cacheKey, data)
                   detailViewData = {
                     domains: data.domains,
                     commitMessage: data.commitMessage,
@@ -1168,10 +1262,7 @@ export async function promptProjectsWithDynamicUpdates(
           // Invalid sequence, reset
           escapeSequence = ""
         }
-      } else if (
-        fullData.length === 1 &&
-        fullData[0] === "\x1b"
-      ) {
+      } else if (fullData.length === 1 && fullData[0] === "\x1b") {
         // Just started escape sequence
         escapeSequence = fullData
         return
@@ -1215,6 +1306,23 @@ export async function promptProjectsWithDynamicUpdates(
         }
 
         // Ignore other keys in settings menu
+        return
+      }
+
+      // Handle CTRL+R to refresh (\x12)
+      if (data === "\x12" && !isDetailViewActive && !isSettingsMenuActive) {
+        process.stdin.removeListener("data", handleData)
+        process.stdin.setRawMode(wasRawMode || false)
+        process.stdin.pause()
+        clearScreen()
+        restoreScreen()
+        // Invalidate all cached data
+        invalidateCachePrefix("project-")
+        invalidateCachePrefix("detail-view:")
+        resolve({
+          projectIds: [],
+          action: "refresh",
+        })
         return
       }
 
@@ -1354,7 +1462,7 @@ export async function promptProjectsWithDynamicUpdates(
           }
 
           const url = `https://vercel.com/${scopeSlug}/${projectName}${urlSuffix}`
-          
+
           // Open URL in background (don't await, stay in detail view)
           open(url).catch(() => {
             // Silently ignore errors opening URL
