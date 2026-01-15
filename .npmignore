@@ -1,0 +1,48 @@
+# Source files
+src/
+tsconfig.json
+tsup.config.ts
+
+# Development files
+.git/
+.gitignore
+.pnpm-store/
+node_modules/
+*.log
+.vcli-errors.log
+.vercelx-errors.log
+
+# Development documentation
+AGENTS.md
+pm/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Test files (if any)
+test/
+tests/
+__tests__/
+*.test.ts
+*.spec.ts
+
+# Build artifacts (keep dist/ but ignore sourcemaps if desired)
+# dist/*.map
+
+# Lock files (optional - some prefer to include them)
+# pnpm-lock.yaml
+
+

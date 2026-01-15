@@ -1,23 +1,43 @@
 {
-  "name": "vercli",
+  "name": "vcli",
   "version": "0.1.0",
   "description": "Interactive CLI for managing Vercel projects with batch actions",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
-    "vercli": "./dist/index.js"
+    "vcli": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "prepublishOnly": "pnpm run build"
   },
   "keywords": [
     "vercel",
     "cli",
     "projects",
-    "management"
+    "management",
+    "vercel-cli",
+    "batch-actions",
+    "deployment",
+    "terminal"
   ],
-  "author": "",
+  "author": "Miguel Alcalde",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miguelalcalde/vercel-enhanced-cli.git"
+  },
+  "homepage": "https://github.com/miguelalcalde/vercel-enhanced-cli#readme",
+  "bugs": {
+    "url": "https://github.com/miguelalcalde/vercel-enhanced-cli/issues"
+  },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
     "chalk": "^5.3.0",

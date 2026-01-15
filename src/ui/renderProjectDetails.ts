@@ -1,26 +1,28 @@
-import chalk from "chalk";
-import { VercelProjectDetails, VercelDomain } from "../api/vercelApi.js";
+import chalk from "chalk"
+import { VercelProjectDetails, VercelDomain } from "../api/vercelApi.js"
 
 /**
  * Format Git repository information for display
  */
 export function formatGitRepository(
-  link: VercelProjectDetails["link"],
+  link: VercelProjectDetails["link"]
 ): string {
   if (!link) {
-    return chalk.gray("Not connected");
+    return chalk.gray("Not connected")
   }
 
-  const repoName = `${link.org}/${link.repoName}`;
-  const branch = link.productionBranch || "main";
+  const repoName = `${link.org}/${link.repoName}`
+  const branch = link.productionBranch || "main"
   const provider =
     link.type === "github"
       ? "GitHub"
       : link.type === "gitlab"
-        ? "GitLab"
-        : link.type;
+      ? "GitLab"
+      : link.type
 
-  return `${chalk.blue(repoName)} ${chalk.gray(`(${branch} branch)`)}\n  Connected via ${provider}`;
+  return `${chalk.blue(repoName)} ${chalk.gray(
+    `(${branch} branch)`
+  )}\n  Connected via ${provider}`
 }
 
 /**
@@ -29,27 +31,27 @@ export function formatGitRepository(
 export function formatFrameworkInfo(details: VercelProjectDetails): string {
   const framework = details.framework
     ? details.framework.charAt(0).toUpperCase() + details.framework.slice(1)
-    : chalk.gray("Auto-detected");
+    : chalk.gray("Auto-detected")
 
-  const buildCommand = formatBuildCommand(details.buildCommand);
-  const devCommand = formatBuildCommand(details.devCommand);
-  const installCommand = formatBuildCommand(details.installCommand);
-  const outputDirectory = details.outputDirectory || chalk.gray("Default");
-  const rootDirectory = details.rootDirectory || chalk.gray("Repository root");
+  const buildCommand = formatBuildCommand(details.buildCommand)
+  const devCommand = formatBuildCommand(details.devCommand)
+  const installCommand = formatBuildCommand(details.installCommand)
+  const outputDirectory = details.outputDirectory || chalk.gray("Default")
+  const rootDirectory = details.rootDirectory || chalk.gray("Repository root")
 
   return `Framework: ${framework}
 Build: ${buildCommand}
 Dev: ${devCommand}
 Install: ${installCommand}
 Output: ${outputDirectory}
-Root: ${rootDirectory}`;
+Root: ${rootDirectory}`
 }
 
 /**
  * Format build command or show "Auto-detected" placeholder
  */
 export function formatBuildCommand(command: string | null | undefined): string {
-  return command || chalk.gray("Auto-detected");
+  return command || chalk.gray("Auto-detected")
 }
 
 /**
@@ -57,54 +59,55 @@ export function formatBuildCommand(command: string | null | undefined): string {
  */
 export function formatDomainsList(domains: VercelDomain[]): string {
   if (domains.length === 0) {
-    return chalk.gray("No domains configured");
+    return chalk.gray("No domains configured")
   }
 
   return domains
     .map((domain) => {
       const verifiedIcon = domain.verified
         ? chalk.green("✓")
-        : chalk.yellow("⚠");
-      const verifiedText = domain.verified ? "" : chalk.yellow(" (Unverified)");
+        : chalk.yellow("⚠")
+      const verifiedText = domain.verified ? "" : chalk.yellow(" (Unverified)")
 
       // Determine domain type (production vs preview)
       const isProduction =
         !domain.gitBranch ||
         domain.gitBranch === "main" ||
-        domain.gitBranch === "master";
+        domain.gitBranch === "master"
       const typeBadge = isProduction
         ? chalk.blue("Production")
-        : chalk.gray(`Preview (${domain.gitBranch})`);
+        : chalk.gray(`Preview (${domain.gitBranch})`)
 
       // Show redirect info if configured
-      let redirectInfo = "";
+      let redirectInfo = ""
       if (domain.redirect) {
-        redirectInfo = chalk.gray(` → ${domain.redirect}`);
+        redirectInfo = chalk.gray(` → ${domain.redirect}`)
       }
 
-      return `  ${verifiedIcon} ${chalk.bold(domain.name)}${redirectInfo}${verifiedText} ${chalk.gray(`(${typeBadge})`)}`;
+      return `  ${verifiedIcon} ${chalk.bold(
+        domain.name
+      )}${redirectInfo}${verifiedText} ${chalk.gray(`(${typeBadge})`)}`
     })
-    .join("\n");
+    .join("\n")
 }
 
 /**
  * Format time ago from timestamp
  */
 export function formatTimeAgo(timestamp: number): string {
-  const now = Date.now();
-  const diffMs = now - timestamp;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
+  const now = Date.now()
+  const diffMs = now - timestamp
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
 
   if (diffMins < 1) {
-    return "just now";
+    return "just now"
   } else if (diffMins < 60) {
-    return `${diffMins} minute${diffMins !== 1 ? "s" : ""} ago`;
+    return `${diffMins} minute${diffMins !== 1 ? "s" : ""} ago`
   } else if (diffHours < 24) {
-    return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`;
+    return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`
   } else {
-    return `${diffDays} day${diffDays !== 1 ? "s" : ""} ago`;
+    return `${diffDays} day${diffDays !== 1 ? "s" : ""} ago`
   }
 }
-
