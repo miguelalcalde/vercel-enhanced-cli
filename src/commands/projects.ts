@@ -10,6 +10,7 @@ import {
   promptTeam,
   TeamOption,
   promptProjectsWithDynamicUpdates,
+  FetchDetailDataCallback,
 } from "../ui/prompts.js"
 import {
   formatProjectOption,
@@ -234,6 +235,20 @@ export async function projectsCommand(providedToken?: string) {
         value: team.id,
       }))
 
+      // Create callback to fetch detail view data (domains and commit message)
+      const fetchDetailData: FetchDetailDataCallback = async (projectId: string) => {
+        const [domains, deployments] = await Promise.all([
+          api.getProjectDomains(projectId, scopeTeamId).catch(() => []),
+          api.listDeployments({ projectId, teamId: scopeTeamId, limit: 1 }).catch(() => []),
+        ])
+
+        // Try to extract commit message from deployment meta (if available)
+        const deployment = deployments[0]
+        const commitMessage = (deployment as any)?.meta?.githubCommitMessage || undefined
+
+        return { domains, commitMessage }
+      }
+
       // Show dynamic prompt with update support
       const result = await promptProjectsWithDynamicUpdates(
         initialProjectOptions,
@@ -242,7 +257,9 @@ export async function projectsCommand(providedToken?: string) {
         projectsWithMetadata,
         formatProjectOption,
         teamOptions,
-        scopeTeamId
+        scopeTeamId,
+        scopeSlug,
+        fetchDetailData
       )
       const { projectIds, action } = result
 

@@ -1,7 +1,9 @@
 import { select, confirm, checkbox } from "@inquirer/prompts"
 import chalk from "chalk"
 import * as readline from "readline"
+import open from "open"
 import { ProjectWithMetadata } from "./renderProjects.js"
+import { VercelDomain } from "../api/vercelApi.js"
 import {
   initializeScreen,
   moveToTop,
@@ -11,6 +13,22 @@ import {
   hideCursor,
   eraseLine,
 } from "./terminalRenderer.js"
+
+/**
+ * Data fetched for detail view
+ */
+export interface DetailViewData {
+  domains: VercelDomain[]
+  commitMessage?: string
+  loading: boolean
+}
+
+/**
+ * Callback to fetch detail view data for a project
+ */
+export type FetchDetailDataCallback = (
+  projectId: string
+) => Promise<{ domains: VercelDomain[]; commitMessage?: string }>
 
 export interface TeamOption {
   name: string
@@ -193,22 +211,6 @@ export async function promptProjectsWithActions(
     | "delete"
     | null
 }> {
-  // #region agent log
-  fetch("http://127.0.0.1:7246/ingest/ba828ae7-af47-494c-9b58-d505a8984231", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location: "prompts.ts:58",
-      message: "promptProjectsWithActions called",
-      data: { projectsCount: projects.length, pageSize },
-      timestamp: Date.now(),
-      sessionId: "debug-session",
-      runId: "run2",
-      hypothesisId: "A,B",
-    }),
-  }).catch(() => {})
-  // #endregion
-
   if (!process.stdin.isTTY) {
     // Fallback to regular checkbox if not TTY
     const selected = await checkbox({
@@ -340,31 +342,6 @@ export async function promptProjectsWithActions(
 
     const handleData = (chunk: Buffer) => {
       const data = chunk.toString("utf8")
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7246/ingest/ba828ae7-af47-494c-9b58-d505a8984231",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "prompts.ts:156",
-            message: "stdin data received",
-            data: {
-              data,
-              length: data.length,
-              firstChar: data[0],
-              charCode: data.charCodeAt(0),
-              selectedCount: selected.size,
-              escapeSequence,
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run3",
-            hypothesisId: "A",
-          }),
-        }
-      ).catch(() => {})
-      // #endregion
 
       // Combine with any existing escape sequence
       const fullData = escapeSequence + data
@@ -427,24 +404,6 @@ export async function promptProjectsWithActions(
 
       // Handle 'd' for delete - immediately trigger if projects selected
       if (data === "d" && selected.size > 0) {
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7246/ingest/ba828ae7-af47-494c-9b58-d505a8984231",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "prompts.ts:220",
-              message: "d keypress - triggering delete immediately",
-              data: { selectedCount: selected.size },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run3",
-              hypothesisId: "A",
-            }),
-          }
-        ).catch(() => {})
-        // #endregion
         process.stdin.removeListener("data", handleData)
         process.stdin.setRawMode(wasRawMode || false)
         process.stdin.pause()
@@ -464,28 +423,6 @@ export async function promptProjectsWithActions(
             ? Array.from(selected)
             : [projects[cursorIndex].value]
 
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7246/ingest/ba828ae7-af47-494c-9b58-d505a8984231",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "prompts.ts:240",
-              message: "o keypress - triggering open immediately",
-              data: {
-                selectedCount: selected.size,
-                usingCursor: selected.size === 0,
-                projectToOpen,
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run3",
-              hypothesisId: "A",
-            }),
-          }
-        ).catch(() => {})
-        // #endregion
         process.stdin.removeListener("data", handleData)
         process.stdin.setRawMode(wasRawMode || false)
         process.stdin.pause()
@@ -561,6 +498,10 @@ export async function promptProjectsWithActions(
  * @param onUpdate - Callback function that receives an update registration function
  * @param allProjectsWithMetadata - Optional full project metadata for search filtering
  * @param formatProjectOptionFn - Optional function to format projects (needed for search filtering)
+ * @param teams - Available teams for settings menu
+ * @param currentTeamId - Currently selected team ID
+ * @param scopeSlug - Scope slug for URL generation
+ * @param fetchDetailData - Callback to fetch detail view data (domains, commit message)
  * @returns Selected project IDs and action to perform
  */
 export async function promptProjectsWithDynamicUpdates(
@@ -570,7 +511,9 @@ export async function promptProjectsWithDynamicUpdates(
   allProjectsWithMetadata?: ProjectWithMetadata[],
   formatProjectOptionFn?: (project: ProjectWithMetadata) => string,
   teams?: TeamOption[],
-  currentTeamId?: string | null
+  currentTeamId?: string | null,
+  scopeSlug?: string,
+  fetchDetailData?: FetchDetailDataCallback
 ): Promise<{
   projectIds: string[]
   action:
@@ -620,8 +563,11 @@ export async function promptProjectsWithDynamicUpdates(
     const formatProject =
       formatProjectOptionFn || ((p: ProjectWithMetadata) => p.name)
 
-    // Open menu state
-    let isOpenMenuActive = false
+    // Detail view state (replaces old open menu)
+    let isDetailViewActive = false
+    let detailViewActionIndex = 0 // 0=Open, 1=Settings, 2=Deployments, 3=Logs
+    let detailViewData: DetailViewData | null = null
+    let detailViewProjectId: string | null = null
 
     // Settings menu state
     let isSettingsMenuActive = false
@@ -629,7 +575,7 @@ export async function promptProjectsWithDynamicUpdates(
     // Rendering state tracking
     let lastRenderedLineCount = 0
     let isInitialized = false
-    let lastViewState: "projects" | "settings" | "open" = "projects"
+    let lastViewState: "projects" | "settings" | "detail" = "projects"
 
     // Ensure raw mode
     if (!wasRawMode) {
@@ -637,10 +583,56 @@ export async function promptProjectsWithDynamicUpdates(
     }
     process.stdin.resume()
 
+    /**
+     * Format deployment state with color and icon
+     */
+    const formatState = (state?: string): string => {
+      if (!state) return chalk.gray("○ unknown")
+      switch (state) {
+        case "READY":
+          return chalk.green("● READY")
+        case "BUILDING":
+          return chalk.yellow("◐ BUILDING")
+        case "ERROR":
+          return chalk.red("● ERROR")
+        case "QUEUED":
+          return chalk.blue("○ QUEUED")
+        case "CANCELED":
+          return chalk.gray("○ CANCELED")
+        case "INITIALIZING":
+          return chalk.cyan("◐ INITIALIZING")
+        default:
+          return chalk.gray(`○ ${state}`)
+      }
+    }
+
+    /**
+     * Format relative time
+     */
+    const formatRelativeTime = (timestamp: number): string => {
+      const now = Date.now()
+      const diff = now - timestamp
+      const seconds = Math.floor(diff / 1000)
+      const minutes = Math.floor(seconds / 60)
+      const hours = Math.floor(minutes / 60)
+      const days = Math.floor(hours / 24)
+      const weeks = Math.floor(days / 7)
+      const months = Math.floor(days / 30)
+      const years = Math.floor(days / 365)
+
+      if (years > 0) return `${years}y ago`
+      if (months > 0) return `${months}mo ago`
+      if (weeks > 0) return `${weeks}w ago`
+      if (days > 0) return `${days}d ago`
+      if (hours > 0) return `${hours}h ago`
+      if (minutes > 0) return `${minutes}m ago`
+      return "just now"
+    }
+
     const render = () => {
       // Determine current view state
-      const currentViewState: "projects" | "settings" | "open" =
-        isSettingsMenuActive ? "settings" : isOpenMenuActive ? "open" : "projects"
+      const currentViewState: "projects" | "settings" | "detail" =
+        isSettingsMenuActive ? "settings" : isDetailViewActive ? "detail" : "projects"
 
       // For menu transitions, clear screen completely
       // For same view updates, use cursor positioning
@@ -691,41 +683,125 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Show open menu if active
-      if (isOpenMenuActive) {
-        const selectedProjectName =
-          selected.size > 0
-            ? projects.find((p) => selected.has(p.value))?.description ||
-              "selected project(s)"
-            : projects.length > 0
-            ? projects[cursorIndex].description || "project"
-            : "project"
+      // Show enhanced detail view if active
+      if (isDetailViewActive) {
+        // Get the project metadata
+        const projectMeta = allProjects.find((p) => p.id === detailViewProjectId)
+        const projectName = projectMeta?.name || projects.find((p) => p.value === detailViewProjectId)?.description || "Project"
+        const state = projectMeta?.lastDeployment?.state
+        const branch = (projectMeta?.link as any)?.productionBranch || "main"
+        const createdAt = projectMeta?.createdAt
+        const creator = projectMeta?.lastDeployment?.creator
+        const creatorName = creator?.username || creator?.email || "unknown"
+        const repoOrg = projectMeta?.link?.org || projectMeta?.link?.repoOwner
+        const repoName = projectMeta?.link?.repoName || (projectMeta?.link?.repo ? projectMeta.link.repo.split("/").pop() : null)
+
+        // Header with project name and state
         eraseLine()
-        process.stdout.write(
-          chalk.bold.cyan(`Open menu for: ${selectedProjectName}\n`)
-        )
+        process.stdout.write(chalk.gray("━".repeat(80)) + "\n")
         currentLine++
         eraseLine()
-        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+        const stateStr = formatState(state)
+        const headerLine = `  ${chalk.bold.white(projectName)}`.padEnd(70) + stateStr
+        process.stdout.write(headerLine + "\n")
         currentLine++
         eraseLine()
-        process.stdout.write(chalk.cyan("  1") + " - Open project\n")
+        process.stdout.write(chalk.gray("━".repeat(80)) + "\n")
         currentLine++
+
+        // Loading state
+        if (detailViewData?.loading) {
+          eraseLine()
+          process.stdout.write(chalk.blue("  Loading project details...") + "\n")
+          currentLine++
+        } else {
+          // URLs (domains)
+          eraseLine()
+          if (detailViewData?.domains && detailViewData.domains.length > 0) {
+            process.stdout.write(chalk.gray("  URLs         ") + chalk.cyan(`https://${detailViewData.domains[0].name}`) + "\n")
+            currentLine++
+            // Show additional domains
+            for (let i = 1; i < Math.min(detailViewData.domains.length, 3); i++) {
+              eraseLine()
+              process.stdout.write(chalk.gray("               ") + chalk.cyan(`https://${detailViewData.domains[i].name}`) + "\n")
+              currentLine++
+            }
+            if (detailViewData.domains.length > 3) {
+              eraseLine()
+              process.stdout.write(chalk.gray(`               ... and ${detailViewData.domains.length - 3} more`) + "\n")
+              currentLine++
+            }
+          } else {
+            process.stdout.write(chalk.gray("  URLs         ") + chalk.gray("No domains configured") + "\n")
+            currentLine++
+          }
+
+          // Branch
+          eraseLine()
+          process.stdout.write(chalk.gray("  Branch       ") + chalk.white(branch) + "\n")
+          currentLine++
+
+          // Commit message
+          eraseLine()
+          if (detailViewData?.commitMessage) {
+            const truncatedCommit = detailViewData.commitMessage.length > 50
+              ? detailViewData.commitMessage.substring(0, 47) + "..."
+              : detailViewData.commitMessage
+            process.stdout.write(chalk.gray("  Commit       ") + chalk.white(`"${truncatedCommit}"`) + "\n")
+          } else {
+            process.stdout.write(chalk.gray("  Commit       ") + chalk.gray("No commit info") + "\n")
+          }
+          currentLine++
+
+          // Created info
+          eraseLine()
+          if (createdAt) {
+            process.stdout.write(chalk.gray("  Created      ") + chalk.white(`${formatRelativeTime(createdAt)} by @${creatorName}`) + "\n")
+          } else {
+            process.stdout.write(chalk.gray("  Created      ") + chalk.gray("Unknown") + "\n")
+          }
+          currentLine++
+
+          // Repository
+          eraseLine()
+          if (repoOrg && repoName) {
+            process.stdout.write(chalk.gray("  Repository   ") + chalk.blue(`https://github.com/${repoOrg}/${repoName}`) + "\n")
+          } else {
+            process.stdout.write(chalk.gray("  Repository   ") + chalk.gray("Not connected") + "\n")
+          }
+          currentLine++
+        }
+
+        // Separator
         eraseLine()
-        process.stdout.write(chalk.cyan("  2") + " - Open settings\n")
+        process.stdout.write(chalk.gray("━".repeat(80)) + "\n")
         currentLine++
+
+        // Action bar with TAB navigation
+        const actions = ["Open Project", "Settings", "Deployments", "Logs"]
+        const actionBar = actions
+          .map((action, i) => {
+            if (i === detailViewActionIndex) {
+              return chalk.bgCyan.black(` ${action} `)
+            }
+            return chalk.gray(action)
+          })
+          .join("  ")
+
         eraseLine()
-        process.stdout.write(chalk.cyan("  3") + " - Open deployments\n")
+        process.stdout.write(`  ${actionBar}\n`)
         currentLine++
+
         eraseLine()
-        process.stdout.write(chalk.cyan("  4") + " - Open logs\n")
+        process.stdout.write(chalk.gray("━".repeat(80)) + "\n")
         currentLine++
+
+        // Navigation hints below the detail view
         eraseLine()
-        process.stdout.write(chalk.gray("  ESC - Cancel\n"))
-        currentLine++
+        process.stdout.write("\n")
         eraseLine()
-        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
-        currentLine++
+        process.stdout.write(chalk.gray("TAB cycle | ENTER action | ←/ESC back\n"))
+        currentLine += 2
 
         // Erase remaining lines if content shrunk
         if (currentLine < lastRenderedLineCount) {
@@ -823,7 +899,7 @@ export async function promptProjectsWithDynamicUpdates(
       eraseLine()
       process.stdout.write(
         chalk.gray(
-          "Type to search | ↑↓ navigate | ENTER select | ^A all | ^I invert | ^D delete | ^O open | ^E edit | ^S settings\n"
+          "Type to search | ↑↓ navigate | → details | ← back | ENTER select | ^A all | ^D delete | ^S settings\n"
         )
       )
       currentLine += 2
@@ -953,14 +1029,78 @@ export async function promptProjectsWithDynamicUpdates(
       // Combine with any existing escape sequence
       const fullData = escapeSequence + data
 
-      // Check for complete arrow key sequences (ignore when menus are active)
+      // Check for complete arrow key sequences
       if (
-        !isOpenMenuActive &&
-        !isSettingsMenuActive &&
         fullData.length >= 3 &&
         fullData[0] === "\x1b" &&
         fullData[1] === "["
       ) {
+        // Handle LEFT ARROW - go back (in detail view or clear search)
+        if (fullData.length >= 3 && fullData[2] === "D") {
+          escapeSequence = ""
+          if (isDetailViewActive) {
+            // Exit detail view
+            isDetailViewActive = false
+            detailViewData = null
+            detailViewProjectId = null
+            detailViewActionIndex = 0
+            render()
+            return
+          } else if (!isSettingsMenuActive && searchQuery) {
+            // Clear search filter
+            searchQuery = ""
+            projects = [...initialProjects]
+            cursorIndex = 0
+            startIndex = 0
+            render()
+            return
+          }
+          return
+        }
+
+        // Handle RIGHT ARROW - enter detail view (only in project list)
+        if (fullData.length >= 3 && fullData[2] === "C") {
+          escapeSequence = ""
+          if (!isDetailViewActive && !isSettingsMenuActive && projects.length > 0 && cursorIndex < projects.length) {
+            // Enter detail view for project at cursor
+            const projectId = projects[cursorIndex].value
+            isDetailViewActive = true
+            detailViewProjectId = projectId
+            detailViewActionIndex = 0
+            detailViewData = { domains: [], loading: true }
+            render()
+
+            // Fetch detail data asynchronously
+            if (fetchDetailData) {
+              fetchDetailData(projectId)
+                .then((data) => {
+                  detailViewData = {
+                    domains: data.domains,
+                    commitMessage: data.commitMessage,
+                    loading: false,
+                  }
+                  render()
+                })
+                .catch(() => {
+                  detailViewData = { domains: [], loading: false }
+                  render()
+                })
+            } else {
+              // No fetch callback, just show basic info
+              detailViewData = { domains: [], loading: false }
+              render()
+            }
+            return
+          }
+          return
+        }
+
+        // Ignore other arrow keys when in menus/detail view
+        if (isDetailViewActive || isSettingsMenuActive) {
+          escapeSequence = ""
+          return
+        }
+
         // Check for Home: \x1b[H or \x1b[1~
         if (
           (fullData.length >= 3 && fullData[2] === "H") ||
@@ -988,7 +1128,7 @@ export async function promptProjectsWithDynamicUpdates(
           render()
           return
         }
-        // Check for arrow keys
+        // Check for UP arrow
         else if (fullData.length >= 3 && fullData[2] === "A") {
           // Up arrow - complete sequence
           escapeSequence = ""
@@ -998,7 +1138,9 @@ export async function promptProjectsWithDynamicUpdates(
           }
           render()
           return
-        } else if (fullData.length >= 3 && fullData[2] === "B") {
+        }
+        // Check for DOWN arrow
+        else if (fullData.length >= 3 && fullData[2] === "B") {
           // Down arrow - complete sequence
           escapeSequence = ""
           cursorIndex = Math.min(projects.length - 1, cursorIndex + 1)
@@ -1011,7 +1153,7 @@ export async function promptProjectsWithDynamicUpdates(
           render()
           return
         } else if (fullData.length === 2) {
-          // Still building - have "\x1b[" but waiting for A/B/H/F/1/4
+          // Still building - have "\x1b[" but waiting for A/B/C/D/H/F/1/4
           escapeSequence = fullData
           return
         } else if (fullData.length >= 3 && fullData.length < 5) {
@@ -1027,8 +1169,6 @@ export async function promptProjectsWithDynamicUpdates(
           escapeSequence = ""
         }
       } else if (
-        !isOpenMenuActive &&
-        !isSettingsMenuActive &&
         fullData.length === 1 &&
         fullData[0] === "\x1b"
       ) {
@@ -1079,27 +1219,31 @@ export async function promptProjectsWithDynamicUpdates(
       }
 
       // Handle CTRL+S to open settings menu (\x13)
-      if (data === "\x13" && !isOpenMenuActive) {
+      if (data === "\x13" && !isDetailViewActive) {
         isSettingsMenuActive = true
         render()
         return
       }
 
-      // Handle ESC to clear search filter (when not in menus and not part of arrow key sequence)
-      if (
-        data === "\x1b" &&
-        !isOpenMenuActive &&
-        !isSettingsMenuActive &&
-        searchQuery &&
-        escapeSequence === ""
-      ) {
-        searchQuery = ""
-        // Restore full project list
-        projects = [...initialProjects]
-        cursorIndex = 0
-        startIndex = 0
-        render()
-        return
+      // Handle ESC to go back or clear search filter
+      if (data === "\x1b" && escapeSequence === "") {
+        if (isDetailViewActive) {
+          // Exit detail view
+          isDetailViewActive = false
+          detailViewData = null
+          detailViewProjectId = null
+          detailViewActionIndex = 0
+          render()
+          return
+        } else if (!isSettingsMenuActive && searchQuery) {
+          // Clear search filter
+          searchQuery = ""
+          projects = [...initialProjects]
+          cursorIndex = 0
+          startIndex = 0
+          render()
+          return
+        }
       }
 
       // Handle CTRL+D for delete (\x04) - immediately trigger if projects selected
@@ -1155,74 +1299,72 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle open menu mode
-      if (isOpenMenuActive) {
-        // Handle ESC to cancel
-        if (data === "\x1b") {
-          isOpenMenuActive = false
+      // Handle detail view mode
+      if (isDetailViewActive) {
+        // Handle ESC to go back
+        if (data === "\x1b" && escapeSequence === "") {
+          isDetailViewActive = false
+          detailViewData = null
+          detailViewProjectId = null
+          detailViewActionIndex = 0
           render()
           return
         }
 
-        // Handle action keys
-        const projectToOpen =
-          selected.size > 0
-            ? Array.from(selected)
-            : projects.length > 0
-            ? [projects[cursorIndex].value]
-            : []
-
-        let action:
-          | "open"
-          | "open-settings"
-          | "open-deployments"
-          | "open-logs"
-          | null = null
-
-        if (data === "1") {
-          action = "open"
-        } else if (data === "2") {
-          action = "open-settings"
-        } else if (data === "3") {
-          action = "open-deployments"
-        } else if (data === "4") {
-          action = "open-logs"
-        } else {
-          // Invalid key, ignore
+        // Handle TAB to cycle through actions (\x09)
+        if (data === "\x09") {
+          detailViewActionIndex = (detailViewActionIndex + 1) % 4
+          render()
           return
         }
 
-        // Resolve with the selected action
-        process.stdin.removeListener("data", handleData)
-        process.stdin.setRawMode(wasRawMode || false)
-        process.stdin.pause()
-        clearScreen()
-        restoreScreen()
-        resolve({
-          projectIds: projectToOpen,
-          action,
-        })
-        return
-      }
+        // Handle SHIFT+TAB to cycle backwards (\x1b[Z)
+        if (fullData === "\x1b[Z") {
+          escapeSequence = ""
+          detailViewActionIndex = (detailViewActionIndex - 1 + 4) % 4
+          render()
+          return
+        }
 
-      // Handle CTRL+O to open projects (\x0F)
-      if (data === "\x0F") {
-        // If multiple projects are selected, open them all directly
-        if (selected.size > 1) {
-          process.stdin.removeListener("data", handleData)
-          process.stdin.setRawMode(wasRawMode || false)
-          process.stdin.pause()
-          clearScreen()
-          restoreScreen()
-          resolve({
-            projectIds: Array.from(selected),
-            action: "open",
+        // Handle ENTER to execute highlighted action (open URL inline, stay in detail view)
+        if (data === "\r" || data === "\n") {
+          const projectId = detailViewProjectId
+          if (!projectId || !scopeSlug) return
+
+          // Get project name from metadata
+          const projectMeta = allProjects.find((p) => p.id === projectId)
+          const projectName = projectMeta?.name
+          if (!projectName) return
+
+          // Build URL based on selected action
+          let urlSuffix = ""
+          switch (detailViewActionIndex) {
+            case 0: // Open project
+              urlSuffix = ""
+              break
+            case 1: // Settings
+              urlSuffix = "/settings"
+              break
+            case 2: // Deployments
+              urlSuffix = "/deployments"
+              break
+            case 3: // Logs
+              urlSuffix = "/logs"
+              break
+          }
+
+          const url = `https://vercel.com/${scopeSlug}/${projectName}${urlSuffix}`
+          
+          // Open URL in background (don't await, stay in detail view)
+          open(url).catch(() => {
+            // Silently ignore errors opening URL
           })
+
+          // Stay in detail view - don't resolve
           return
         }
-        // Otherwise, show open menu for single selection or cursor position
-        isOpenMenuActive = true
-        render()
+
+        // Ignore other keys in detail view
         return
       }
 
