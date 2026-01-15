@@ -18,6 +18,19 @@ import {
   setCache,
   invalidateCachePrefix,
 } from "../utils/cache.js"
+import {
+  INDICATORS,
+  BOX,
+  ICONS,
+  getIconsEnabled,
+  getTableWidth,
+  TABLE_WIDTH,
+  createHorizontalBorder,
+  createTopBorder,
+  createBottomBorder,
+  createMiddleBorder,
+  createBorderedRow,
+} from "./styles.js"
 
 /** Cache key prefix for detail view data */
 const CACHE_KEY_DETAIL_VIEW = "detail-view:"
@@ -81,16 +94,18 @@ export async function promptSettingsMenu(
       ? "Personal"
       : teams.find((t) => t.value === currentTeamId)?.name || "Unknown"
 
-  console.log(chalk.bold.cyan("Settings\n"))
-  console.log(chalk.gray("-".repeat(100)))
-  console.log(
-    chalk.cyan("  t") +
-      " - Change team (Current: " +
-      chalk.bold(currentTeamName) +
-      ")"
-  )
-  console.log(chalk.gray("  ESC - Back to projects\n"))
-  console.log(chalk.gray("-".repeat(100)))
+  // Top border
+  console.log(chalk.gray(createTopBorder()))
+  // Title row
+  console.log(createBorderedRow(chalk.bold.cyan("Settings")))
+  // Middle separator
+  console.log(chalk.gray(createMiddleBorder()))
+  // Menu options
+  const teamOption = chalk.cyan("  t") + " - Change team (Current: " + chalk.bold(currentTeamName) + ")"
+  console.log(createBorderedRow(teamOption))
+  console.log(createBorderedRow(chalk.gray("  ESC - Back to projects")))
+  // Bottom border
+  console.log(chalk.gray(createBottomBorder()))
 
   return new Promise((resolve, reject) => {
     const wasRawMode = process.stdin.isRaw
@@ -263,25 +278,26 @@ export async function promptProjectsWithActions(
 
       let currentLine = 1
 
+      // Top border of the table
       eraseLine()
-      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+      process.stdout.write(chalk.gray(createTopBorder()) + "\n")
       currentLine++
-      // Add table headers
+
+      // Table header row with vertical borders
       eraseLine()
-      process.stdout.write(
-        chalk.gray(
-          "    " +
-            "Name".padEnd(35) +
-            "Created".padEnd(10) +
-            "Updated".padEnd(10) +
-            "Last Deploy".padEnd(20) +
-            "Deploy Creator".padEnd(15) +
-            "\n"
-        )
-      )
+      const headerContent = 
+        "    " +
+        "Name".padEnd(35) +
+        "Created".padEnd(10) +
+        "Updated".padEnd(10) +
+        "Last Deploy".padEnd(20) +
+        "Deploy Creator".padEnd(15)
+      process.stdout.write(chalk.gray(createBorderedRow(headerContent)) + "\n")
       currentLine++
+
+      // Middle separator between header and content
       eraseLine()
-      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+      process.stdout.write(chalk.gray(createMiddleBorder()) + "\n")
       currentLine++
 
       const endIndex = Math.min(startIndex + pageSize, projects.length)
@@ -293,22 +309,27 @@ export async function promptProjectsWithActions(
         const isSelected = selected.has(project.value)
         const isCursor = projectIndex === cursorIndex
 
-        const prefix = isCursor ? chalk.cyan("> ") : "  "
-        const checkbox = isSelected ? chalk.green("◉") : "○"
+        const prefix = isCursor ? chalk.cyan(`${INDICATORS.cursor} `) : "  "
+        const checkbox = isSelected ? chalk.green(INDICATORS.selected) : INDICATORS.unselected
         const name = isCursor
           ? chalk.cyan(project.name)
           : isSelected
           ? chalk.bold(project.name)
           : project.name
 
+        // Create row content and wrap with borders
+        const rowContent = `${prefix}${checkbox} ${name}`
         eraseLine()
-        process.stdout.write(`${prefix}${checkbox} ${name}\n`)
+        process.stdout.write(createBorderedRow(rowContent) + "\n")
         currentLine++
       }
 
+      // Bottom border of the table
+      eraseLine()
+      process.stdout.write(chalk.gray(createBottomBorder()) + "\n")
+      currentLine++
+
       if (projects.length > pageSize) {
-        eraseLine()
-        process.stdout.write("\n")
         eraseLine()
         process.stdout.write(
           chalk.gray(
@@ -317,17 +338,15 @@ export async function promptProjectsWithActions(
             )}\n`
           )
         )
-        currentLine += 2
+        currentLine++
       }
 
       if (selected.size > 0) {
         eraseLine()
-        process.stdout.write("\n")
-        eraseLine()
         process.stdout.write(
           chalk.green(`${selected.size} project(s) selected\n`)
         )
-        currentLine += 2
+        currentLine++
       }
 
       // Footer with navigation hints
@@ -510,6 +529,7 @@ export async function promptProjectsWithActions(
  * @param currentTeamId - Currently selected team ID
  * @param scopeSlug - Scope slug for URL generation
  * @param fetchDetailData - Callback to fetch detail view data (domains, commit message)
+ * @param iconsFlag - CLI flag for icons (true=force enable, false=force disable, undefined=auto-detect)
  * @returns Selected project IDs and action to perform
  */
 export async function promptProjectsWithDynamicUpdates(
@@ -521,7 +541,8 @@ export async function promptProjectsWithDynamicUpdates(
   teams?: TeamOption[],
   currentTeamId?: string | null,
   scopeSlug?: string,
-  fetchDetailData?: FetchDetailDataCallback
+  fetchDetailData?: FetchDetailDataCallback,
+  iconsFlag?: boolean
 ): Promise<{
   projectIds: string[]
   action:
@@ -530,7 +551,6 @@ export async function promptProjectsWithDynamicUpdates(
     | "open-deployments"
     | "open-logs"
     | "delete"
-    | "edit"
     | "change-team"
     | "refresh"
     | null
@@ -585,6 +605,9 @@ export async function promptProjectsWithDynamicUpdates(
     let lastRenderedLineCount = 0
     let isInitialized = false
     let lastViewState: "projects" | "settings" | "detail" = "projects"
+
+    // Icons enabled state (resolved once at start)
+    const iconsEnabled = getIconsEnabled(iconsFlag)
 
     // Ensure raw mode
     if (!wasRawMode) {
@@ -667,25 +690,36 @@ export async function promptProjectsWithDynamicUpdates(
           currentTeamId === null || currentTeamId === undefined
             ? "Personal"
             : teams?.find((t) => t.value === currentTeamId)?.name || "Unknown"
+        
+        // Top border
         eraseLine()
-        process.stdout.write(chalk.bold.cyan("Settings\n"))
+        process.stdout.write(chalk.gray(createTopBorder()) + "\n")
         currentLine++
+        
+        // Settings title row
         eraseLine()
-        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+        const settingsTitle = iconsEnabled ? `${ICONS.settings} Settings` : "Settings"
+        process.stdout.write(createBorderedRow(chalk.bold.cyan(settingsTitle)) + "\n")
         currentLine++
+        
+        // Middle separator
         eraseLine()
-        process.stdout.write(
-          chalk.cyan("  1") +
-            " - Change team (Current: " +
-            chalk.bold(currentTeamName) +
-            ")\n"
-        )
+        process.stdout.write(chalk.gray(createMiddleBorder()) + "\n")
         currentLine++
+        
+        // Menu options
         eraseLine()
-        process.stdout.write(chalk.gray("  ESC - Back to projects\n"))
+        const teamOption = chalk.cyan("  1") + " - Change team (Current: " + chalk.bold(currentTeamName) + ")"
+        process.stdout.write(createBorderedRow(teamOption) + "\n")
         currentLine++
+        
         eraseLine()
-        process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+        process.stdout.write(createBorderedRow(chalk.gray("  ESC - Back to projects")) + "\n")
+        currentLine++
+        
+        // Bottom border
+        eraseLine()
+        process.stdout.write(chalk.gray(createBottomBorder()) + "\n")
         currentLine++
 
         // Erase remaining lines if content shrunk
@@ -718,25 +752,26 @@ export async function promptProjectsWithDynamicUpdates(
             ? projectMeta.link.repo.split("/").pop()
             : null)
 
+        const detailWidth = 80
+
         // Header with project name and state
         eraseLine()
-        process.stdout.write(chalk.gray("━".repeat(80)) + "\n")
+        process.stdout.write(chalk.gray(createTopBorder(detailWidth)) + "\n")
         currentLine++
         eraseLine()
         const stateStr = formatState(state)
-        const headerLine =
-          `  ${chalk.bold.white(projectName)}`.padEnd(70) + stateStr
-        process.stdout.write(headerLine + "\n")
+        const headerLine = `  ${chalk.bold.white(projectName)}`.padEnd(60) + stateStr
+        process.stdout.write(createBorderedRow(headerLine, detailWidth) + "\n")
         currentLine++
         eraseLine()
-        process.stdout.write(chalk.gray("━".repeat(80)) + "\n")
+        process.stdout.write(chalk.gray(createMiddleBorder(detailWidth)) + "\n")
         currentLine++
 
         // Loading state
         if (detailViewData?.loading) {
           eraseLine()
           process.stdout.write(
-            chalk.blue("  Loading project details...") + "\n"
+            createBorderedRow(chalk.blue("  Loading project details..."), detailWidth) + "\n"
           )
           currentLine++
         } else {
@@ -744,41 +779,39 @@ export async function promptProjectsWithDynamicUpdates(
           eraseLine()
           if (detailViewData?.domains && detailViewData.domains.length > 0) {
             process.stdout.write(
-              chalk.gray("  URLs         ") +
-                chalk.cyan(`https://${detailViewData.domains[0].name}`) +
-                "\n"
+              createBorderedRow(
+                chalk.gray("  URLs         ") + chalk.cyan(`https://${detailViewData.domains[0].name}`),
+                detailWidth
+              ) + "\n"
             )
             currentLine++
             // Show additional domains
-            for (
-              let i = 1;
-              i < Math.min(detailViewData.domains.length, 3);
-              i++
-            ) {
+            for (let i = 1; i < Math.min(detailViewData.domains.length, 3); i++) {
               eraseLine()
               process.stdout.write(
-                chalk.gray("               ") +
-                  chalk.cyan(`https://${detailViewData.domains[i].name}`) +
-                  "\n"
+                createBorderedRow(
+                  chalk.gray("               ") + chalk.cyan(`https://${detailViewData.domains[i].name}`),
+                  detailWidth
+                ) + "\n"
               )
               currentLine++
             }
             if (detailViewData.domains.length > 3) {
               eraseLine()
               process.stdout.write(
-                chalk.gray(
-                  `               ... and ${
-                    detailViewData.domains.length - 3
-                  } more`
+                createBorderedRow(
+                  chalk.gray(`               ... and ${detailViewData.domains.length - 3} more`),
+                  detailWidth
                 ) + "\n"
               )
               currentLine++
             }
           } else {
             process.stdout.write(
-              chalk.gray("  URLs         ") +
-                chalk.gray("No domains configured") +
-                "\n"
+              createBorderedRow(
+                chalk.gray("  URLs         ") + chalk.gray("No domains configured"),
+                detailWidth
+              ) + "\n"
             )
             currentLine++
           }
@@ -786,7 +819,7 @@ export async function promptProjectsWithDynamicUpdates(
           // Branch
           eraseLine()
           process.stdout.write(
-            chalk.gray("  Branch       ") + chalk.white(branch) + "\n"
+            createBorderedRow(chalk.gray("  Branch       ") + chalk.white(branch), detailWidth) + "\n"
           )
           currentLine++
 
@@ -798,15 +831,17 @@ export async function promptProjectsWithDynamicUpdates(
                 ? detailViewData.commitMessage.substring(0, 47) + "..."
                 : detailViewData.commitMessage
             process.stdout.write(
-              chalk.gray("  Commit       ") +
-                chalk.white(`"${truncatedCommit}"`) +
-                "\n"
+              createBorderedRow(
+                chalk.gray("  Commit       ") + chalk.white(`"${truncatedCommit}"`),
+                detailWidth
+              ) + "\n"
             )
           } else {
             process.stdout.write(
-              chalk.gray("  Commit       ") +
-                chalk.gray("No commit info") +
-                "\n"
+              createBorderedRow(
+                chalk.gray("  Commit       ") + chalk.gray("No commit info"),
+                detailWidth
+              ) + "\n"
             )
           }
           currentLine++
@@ -815,15 +850,17 @@ export async function promptProjectsWithDynamicUpdates(
           eraseLine()
           if (createdAt) {
             process.stdout.write(
-              chalk.gray("  Created      ") +
-                chalk.white(
-                  `${formatRelativeTime(createdAt)} by @${creatorName}`
-                ) +
-                "\n"
+              createBorderedRow(
+                chalk.gray("  Created      ") + chalk.white(`${formatRelativeTime(createdAt)} by @${creatorName}`),
+                detailWidth
+              ) + "\n"
             )
           } else {
             process.stdout.write(
-              chalk.gray("  Created      ") + chalk.gray("Unknown") + "\n"
+              createBorderedRow(
+                chalk.gray("  Created      ") + chalk.gray("Unknown"),
+                detailWidth
+              ) + "\n"
             )
           }
           currentLine++
@@ -832,13 +869,17 @@ export async function promptProjectsWithDynamicUpdates(
           eraseLine()
           if (repoOrg && repoName) {
             process.stdout.write(
-              chalk.gray("  Repository   ") +
-                chalk.blue(`https://github.com/${repoOrg}/${repoName}`) +
-                "\n"
+              createBorderedRow(
+                chalk.gray("  Repository   ") + chalk.blue(`https://github.com/${repoOrg}/${repoName}`),
+                detailWidth
+              ) + "\n"
             )
           } else {
             process.stdout.write(
-              chalk.gray("  Repository   ") + chalk.gray("Not connected") + "\n"
+              createBorderedRow(
+                chalk.gray("  Repository   ") + chalk.gray("Not connected"),
+                detailWidth
+              ) + "\n"
             )
           }
           currentLine++
@@ -846,12 +887,14 @@ export async function promptProjectsWithDynamicUpdates(
 
         // Separator
         eraseLine()
-        process.stdout.write(chalk.gray("━".repeat(80)) + "\n")
+        process.stdout.write(chalk.gray(createMiddleBorder(detailWidth)) + "\n")
         currentLine++
 
         // Action bar with TAB navigation
-        const actions = ["Open Project", "Settings", "Deployments", "Logs"]
-        const actionBar = actions
+        const actionsWithIcons = iconsEnabled
+          ? [`${ICONS.browser} Open Project`, `${ICONS.settings} Settings`, `${ICONS.deployments} Deployments`, `${ICONS.logs} Logs`]
+          : ["Open Project", "Settings", "Deployments", "Logs"]
+        const actionBar = actionsWithIcons
           .map((action, i) => {
             if (i === detailViewActionIndex) {
               return chalk.bgCyan.black(` ${action} `)
@@ -861,11 +904,11 @@ export async function promptProjectsWithDynamicUpdates(
           .join("  ")
 
         eraseLine()
-        process.stdout.write(`  ${actionBar}\n`)
+        process.stdout.write(createBorderedRow(`  ${actionBar}`, detailWidth) + "\n")
         currentLine++
 
         eraseLine()
-        process.stdout.write(chalk.gray("━".repeat(80)) + "\n")
+        process.stdout.write(chalk.gray(createBottomBorder(detailWidth)) + "\n")
         currentLine++
 
         // Navigation hints below the detail view
@@ -887,9 +930,10 @@ export async function promptProjectsWithDynamicUpdates(
 
       // Always show search input area (search-first interaction model)
       eraseLine()
+      const searchPrefix = iconsEnabled ? `${ICONS.search} ` : ""
       if (searchQuery) {
         process.stdout.write(
-          chalk.bold.cyan(`Search: ${searchQuery}`) +
+          chalk.bold.cyan(`${searchPrefix}Search: ${searchQuery}`) +
             chalk.gray(
               ` (${projects.length} match${projects.length !== 1 ? "es" : ""})`
             ) +
@@ -898,29 +942,31 @@ export async function promptProjectsWithDynamicUpdates(
         )
       } else {
         process.stdout.write(
-          chalk.gray("Type to search...") + chalk.inverse(" ") + "\n"
+          chalk.gray(`${searchPrefix}Type to search...`) + chalk.inverse(" ") + "\n"
         )
       }
       currentLine++
+
+      // Top border of the table
       eraseLine()
-      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+      process.stdout.write(chalk.gray(createTopBorder()) + "\n")
       currentLine++
-      // Add table headers
+
+      // Table header row with vertical borders
       eraseLine()
-      process.stdout.write(
-        chalk.gray(
-          "    " +
-            "Name".padEnd(35) +
-            "Created".padEnd(10) +
-            "Updated".padEnd(10) +
-            "Last Deploy".padEnd(20) +
-            "Deploy Creator".padEnd(15) +
-            "\n"
-        )
-      )
+      const headerContent = 
+        "    " +
+        "Name".padEnd(35) +
+        "Created".padEnd(10) +
+        "Updated".padEnd(10) +
+        "Last Deploy".padEnd(20) +
+        "Deploy Creator".padEnd(15)
+      process.stdout.write(chalk.gray(createBorderedRow(headerContent)) + "\n")
       currentLine++
+
+      // Middle separator between header and content
       eraseLine()
-      process.stdout.write(chalk.gray("-".repeat(100)) + "\n")
+      process.stdout.write(chalk.gray(createMiddleBorder()) + "\n")
       currentLine++
 
       const endIndex = Math.min(startIndex + pageSize, projects.length)
@@ -932,22 +978,27 @@ export async function promptProjectsWithDynamicUpdates(
         const isSelected = selected.has(project.value)
         const isCursor = projectIndex === cursorIndex
 
-        const prefix = isCursor ? chalk.cyan("> ") : "  "
-        const checkbox = isSelected ? chalk.green("◉") : "○"
+        const prefix = isCursor ? chalk.cyan(`${INDICATORS.cursor} `) : "  "
+        const checkbox = isSelected ? chalk.green(INDICATORS.selected) : INDICATORS.unselected
         const name = isCursor
           ? chalk.cyan(project.name)
           : isSelected
           ? chalk.bold(project.name)
           : project.name
 
+        // Create row content and wrap with borders
+        const rowContent = `${prefix}${checkbox} ${name}`
         eraseLine()
-        process.stdout.write(`${prefix}${checkbox} ${name}\n`)
+        process.stdout.write(createBorderedRow(rowContent) + "\n")
         currentLine++
       }
 
+      // Bottom border of the table
+      eraseLine()
+      process.stdout.write(chalk.gray(createBottomBorder()) + "\n")
+      currentLine++
+
       if (projects.length > pageSize) {
-        eraseLine()
-        process.stdout.write("\n")
         eraseLine()
         process.stdout.write(
           chalk.gray(
@@ -956,29 +1007,24 @@ export async function promptProjectsWithDynamicUpdates(
             )}\n`
           )
         )
-        currentLine += 2
+        currentLine++
       }
 
       if (selected.size > 0) {
         eraseLine()
-        process.stdout.write("\n")
-        eraseLine()
         process.stdout.write(
           chalk.green(`${selected.size} project(s) selected\n`)
         )
-        currentLine += 2
+        currentLine++
       }
 
       // Footer with navigation hints (search-first interaction model)
       eraseLine()
-      process.stdout.write("\n")
-      eraseLine()
-      process.stdout.write(
-        chalk.gray(
-          "Type to search | ↑↓ navigate | → details | ← back | ENTER select | ^A all | ^D delete | ^R refresh | ^S settings\n"
-        )
-      )
-      currentLine += 2
+      const footerHints = iconsEnabled
+        ? `${ICONS.search} Type to search | ↑↓ navigate | → details | ← back | ENTER select | ^A invert | ${ICONS.delete} ^D delete | ${ICONS.refresh} ^R refresh | ${ICONS.settings} ^S settings\n`
+        : "Type to search | ↑↓ navigate | → details | ← back | ENTER select | ^A invert | ^D delete | ^R refresh | ^S settings\n"
+      process.stdout.write(chalk.gray(footerHints))
+      currentLine++
 
       // Erase remaining lines if content shrunk
       if (currentLine < lastRenderedLineCount) {
@@ -1368,45 +1414,6 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle CTRL+E for edit/view details (\x05) - requires single selection
-      if (data === "\x05") {
-        const projectToEdit =
-          selected.size === 1
-            ? Array.from(selected)[0]
-            : selected.size === 0 && projects.length > 0
-            ? projects[cursorIndex].value
-            : null
-
-        if (projectToEdit) {
-          process.stdin.removeListener("data", handleData)
-          process.stdin.setRawMode(wasRawMode || false)
-          process.stdin.pause()
-          clearScreen()
-          restoreScreen()
-          resolve({
-            projectIds: [projectToEdit],
-            action: "edit",
-          })
-          return
-        } else if (selected.size > 1) {
-          // Show message that only one project can be selected for edit
-          // We'll show this by briefly rendering a message, but for now just proceed
-          // The projects.ts handler will show the error message
-          process.stdin.removeListener("data", handleData)
-          process.stdin.setRawMode(wasRawMode || false)
-          process.stdin.pause()
-          clearScreen()
-          restoreScreen()
-          resolve({
-            projectIds: Array.from(selected),
-            action: "edit",
-          })
-          return
-        }
-        // If no project available, ignore the keypress
-        return
-      }
-
       // Handle detail view mode
       if (isDetailViewActive) {
         // Handle ESC to go back
@@ -1490,15 +1497,8 @@ export async function promptProjectsWithDynamicUpdates(
         return
       }
 
-      // Handle CTRL+A to select all (\x01)
+      // Handle CTRL+A to invert selection (\x01)
       if (data === "\x01") {
-        projects.forEach((p) => selected.add(p.value))
-        render()
-        return
-      }
-
-      // Handle CTRL+I to invert selection (\x09)
-      if (data === "\x09") {
         projects.forEach((p) => {
           if (selected.has(p.value)) {
             selected.delete(p.value)

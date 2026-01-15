@@ -11,8 +11,13 @@ program
     "-t, --token <token>",
     "Vercel API token (or use VERCEL_TOKEN env var or auth.json)"
   )
+  .option("--icons", "Force enable Nerd Font icons")
+  .option("--no-icons", "Force disable Nerd Font icons")
   .action(async (options) => {
-    await projectsCommand(options.token)
+    await projectsCommand({
+      token: options.token,
+      icons: options.icons,
+    })
   })
 
 program.parse()

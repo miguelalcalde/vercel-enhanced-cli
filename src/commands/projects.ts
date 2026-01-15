@@ -18,15 +18,23 @@ import {
 } from "../ui/renderProjects.js"
 import { logError, getErrorLogPath } from "../utils/errorLogger.js"
 import { invalidateCachePrefix } from "../utils/cache.js"
-import { showProjectDetails } from "./projectDetails.js"
 import chalk from "chalk"
 import open from "open"
 
 /**
- * Main projects command wizard
- * @param providedToken - Optional token provided via CLI flag
+ * Options for the projects command
  */
-export async function projectsCommand(providedToken?: string) {
+export interface ProjectsCommandOptions {
+  token?: string
+  icons?: boolean
+}
+
+/**
+ * Main projects command wizard
+ * @param options - Command options including token and icons flag
+ */
+export async function projectsCommand(options: ProjectsCommandOptions = {}) {
+  const { token: providedToken, icons: iconsFlag } = options
   try {
     // Step 1: Load authentication token
     console.log(chalk.blue("🔐 Checking authentication..."))
@@ -40,7 +48,7 @@ export async function projectsCommand(providedToken?: string) {
     const teamsMap = new Map(teams.map((t) => [t.id, t]))
 
     // Step 3: Get or select current team
-    let currentTeamId: string | null = readCurrentTeam()
+    let currentTeamId: string | null | undefined = readCurrentTeam()
 
     // If no team is set, prompt user to select one
     if (currentTeamId === undefined) {
@@ -260,7 +268,8 @@ export async function projectsCommand(providedToken?: string) {
         teamOptions,
         scopeTeamId,
         scopeSlug,
-        fetchDetailData
+        fetchDetailData,
+        iconsFlag
       )
       const { projectIds, action } = result
 
@@ -309,31 +318,6 @@ export async function projectsCommand(providedToken?: string) {
             break
           }
           projects.sort((a, b) => b.updatedAt - a.updatedAt)
-        }
-      } else if (action === "edit") {
-        // Show project details for the selected project
-        // Edit action requires exactly one project
-        if (projectIds.length === 0) {
-          console.log(chalk.yellow("No project selected."))
-          // Return to selection
-        } else if (projectIds.length > 1) {
-          console.log(
-            chalk.yellow("Please select only one project to view details.")
-          )
-          // Return to selection
-        } else {
-          const selectedProject = projectsWithMetadata.find(
-            (p) => p.id === projectIds[0]
-          )
-          if (selectedProject) {
-            await showProjectDetails(
-              selectedProject,
-              api,
-              scopeTeamId,
-              scopeSlug
-            )
-            // Return to selection after viewing details
-          }
         }
       } else if (action === "change-team") {
         // Show team selection prompt

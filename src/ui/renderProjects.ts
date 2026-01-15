@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { VercelProject, VercelDeployment } from "../api/vercelApi.js";
+import { createHorizontalBorder } from "./styles.js";
 
 export interface ProjectWithMetadata extends VercelProject {
   lastDeployment?: VercelDeployment | null;
@@ -104,7 +105,7 @@ export function renderProjectsHeader(): void {
         "Deploy Creator".padEnd(15),
     ),
   );
-  console.log(chalk.gray("-".repeat(90)));
+  console.log(chalk.gray(createHorizontalBorder(90)));
 }
 
 /**

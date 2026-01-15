@@ -14,6 +14,10 @@ description: This is a running list of tasks of small to medium size that we wan
 - [ ] Refactor the project detail page so we can have re-use that menu type in other places. Ideally in the future, open deployments can just open yet another menu that is similar to the details but with a list where we can navigate through the deployments. The bottom bar will always have the options there to open in the browser at some point.
 - [ ] Add intuitive icons for options (open in browser – globe, open in settings – gear, )
 - [ ] Bring back the number to select and action an option in the project detail page.
+- [ ] Make project deletion confirmation more complex than just a yes/no. Ideas:
+  - type "sayonara baby" to confirm
+  - type "I'm not a robot" to confirm
+  - type a random sentence of (2 \* the number of projects to delete) words to confirm (I like this one)
 
 ## done
 
