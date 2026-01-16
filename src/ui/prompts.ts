@@ -13,11 +13,7 @@ import {
   hideCursor,
   eraseLine,
 } from "./terminalRenderer.js"
-import {
-  getCached,
-  setCache,
-  invalidateCachePrefix,
-} from "../utils/cache.js"
+import { getCached, setCache, invalidateCachePrefix } from "../utils/cache.js"
 import {
   INDICATORS,
   BOX,
@@ -101,7 +97,11 @@ export async function promptSettingsMenu(
   // Middle separator
   console.log(chalk.gray(createMiddleBorder()))
   // Menu options
-  const teamOption = chalk.cyan("  t") + " - Change team (Current: " + chalk.bold(currentTeamName) + ")"
+  const teamOption =
+    chalk.cyan("  t") +
+    " - Change team (Current: " +
+    chalk.bold(currentTeamName) +
+    ")"
   console.log(createBorderedRow(teamOption))
   console.log(createBorderedRow(chalk.gray("  ESC - Back to projects")))
   // Bottom border
@@ -285,7 +285,7 @@ export async function promptProjectsWithActions(
 
       // Table header row with vertical borders
       eraseLine()
-      const headerContent = 
+      const headerContent =
         "    " +
         "Name".padEnd(35) +
         "Created".padEnd(10) +
@@ -310,7 +310,9 @@ export async function promptProjectsWithActions(
         const isCursor = projectIndex === cursorIndex
 
         const prefix = isCursor ? chalk.cyan(`${INDICATORS.cursor} `) : "  "
-        const checkbox = isSelected ? chalk.green(INDICATORS.selected) : INDICATORS.unselected
+        const checkbox = isSelected
+          ? chalk.white(INDICATORS.selected)
+          : INDICATORS.unselected
         const name = isCursor
           ? chalk.cyan(project.name)
           : isSelected
@@ -690,33 +692,43 @@ export async function promptProjectsWithDynamicUpdates(
           currentTeamId === null || currentTeamId === undefined
             ? "Personal"
             : teams?.find((t) => t.value === currentTeamId)?.name || "Unknown"
-        
+
         // Top border
         eraseLine()
         process.stdout.write(chalk.gray(createTopBorder()) + "\n")
         currentLine++
-        
+
         // Settings title row
         eraseLine()
-        const settingsTitle = iconsEnabled ? `${ICONS.settings} Settings` : "Settings"
-        process.stdout.write(createBorderedRow(chalk.bold.cyan(settingsTitle)) + "\n")
+        const settingsTitle = iconsEnabled
+          ? `${ICONS.settings} Settings`
+          : "Settings"
+        process.stdout.write(
+          createBorderedRow(chalk.bold.cyan(settingsTitle)) + "\n"
+        )
         currentLine++
-        
+
         // Middle separator
         eraseLine()
         process.stdout.write(chalk.gray(createMiddleBorder()) + "\n")
         currentLine++
-        
+
         // Menu options
         eraseLine()
-        const teamOption = chalk.cyan("  1") + " - Change team (Current: " + chalk.bold(currentTeamName) + ")"
+        const teamOption =
+          chalk.cyan("  1") +
+          " - Change team (Current: " +
+          chalk.bold(currentTeamName) +
+          ")"
         process.stdout.write(createBorderedRow(teamOption) + "\n")
         currentLine++
-        
+
         eraseLine()
-        process.stdout.write(createBorderedRow(chalk.gray("  ESC - Back to projects")) + "\n")
+        process.stdout.write(
+          createBorderedRow(chalk.gray("  ESC - Back to projects")) + "\n"
+        )
         currentLine++
-        
+
         // Bottom border
         eraseLine()
         process.stdout.write(chalk.gray(createBottomBorder()) + "\n")
@@ -760,7 +772,8 @@ export async function promptProjectsWithDynamicUpdates(
         currentLine++
         eraseLine()
         const stateStr = formatState(state)
-        const headerLine = `  ${chalk.bold.white(projectName)}`.padEnd(60) + stateStr
+        const headerLine =
+          `  ${chalk.bold.white(projectName)}`.padEnd(60) + stateStr
         process.stdout.write(createBorderedRow(headerLine, detailWidth) + "\n")
         currentLine++
         eraseLine()
@@ -771,7 +784,10 @@ export async function promptProjectsWithDynamicUpdates(
         if (detailViewData?.loading) {
           eraseLine()
           process.stdout.write(
-            createBorderedRow(chalk.blue("  Loading project details..."), detailWidth) + "\n"
+            createBorderedRow(
+              chalk.blue("  Loading project details..."),
+              detailWidth
+            ) + "\n"
           )
           currentLine++
         } else {
@@ -780,17 +796,23 @@ export async function promptProjectsWithDynamicUpdates(
           if (detailViewData?.domains && detailViewData.domains.length > 0) {
             process.stdout.write(
               createBorderedRow(
-                chalk.gray("  URLs         ") + chalk.cyan(`https://${detailViewData.domains[0].name}`),
+                chalk.gray("  URLs         ") +
+                  chalk.cyan(`https://${detailViewData.domains[0].name}`),
                 detailWidth
               ) + "\n"
             )
             currentLine++
             // Show additional domains
-            for (let i = 1; i < Math.min(detailViewData.domains.length, 3); i++) {
+            for (
+              let i = 1;
+              i < Math.min(detailViewData.domains.length, 3);
+              i++
+            ) {
               eraseLine()
               process.stdout.write(
                 createBorderedRow(
-                  chalk.gray("               ") + chalk.cyan(`https://${detailViewData.domains[i].name}`),
+                  chalk.gray("               ") +
+                    chalk.cyan(`https://${detailViewData.domains[i].name}`),
                   detailWidth
                 ) + "\n"
               )
@@ -800,7 +822,11 @@ export async function promptProjectsWithDynamicUpdates(
               eraseLine()
               process.stdout.write(
                 createBorderedRow(
-                  chalk.gray(`               ... and ${detailViewData.domains.length - 3} more`),
+                  chalk.gray(
+                    `               ... and ${
+                      detailViewData.domains.length - 3
+                    } more`
+                  ),
                   detailWidth
                 ) + "\n"
               )
@@ -809,7 +835,8 @@ export async function promptProjectsWithDynamicUpdates(
           } else {
             process.stdout.write(
               createBorderedRow(
-                chalk.gray("  URLs         ") + chalk.gray("No domains configured"),
+                chalk.gray("  URLs         ") +
+                  chalk.gray("No domains configured"),
                 detailWidth
               ) + "\n"
             )
@@ -819,7 +846,10 @@ export async function promptProjectsWithDynamicUpdates(
           // Branch
           eraseLine()
           process.stdout.write(
-            createBorderedRow(chalk.gray("  Branch       ") + chalk.white(branch), detailWidth) + "\n"
+            createBorderedRow(
+              chalk.gray("  Branch       ") + chalk.white(branch),
+              detailWidth
+            ) + "\n"
           )
           currentLine++
 
@@ -832,7 +862,8 @@ export async function promptProjectsWithDynamicUpdates(
                 : detailViewData.commitMessage
             process.stdout.write(
               createBorderedRow(
-                chalk.gray("  Commit       ") + chalk.white(`"${truncatedCommit}"`),
+                chalk.gray("  Commit       ") +
+                  chalk.white(`"${truncatedCommit}"`),
                 detailWidth
               ) + "\n"
             )
@@ -851,7 +882,10 @@ export async function promptProjectsWithDynamicUpdates(
           if (createdAt) {
             process.stdout.write(
               createBorderedRow(
-                chalk.gray("  Created      ") + chalk.white(`${formatRelativeTime(createdAt)} by @${creatorName}`),
+                chalk.gray("  Created      ") +
+                  chalk.white(
+                    `${formatRelativeTime(createdAt)} by @${creatorName}`
+                  ),
                 detailWidth
               ) + "\n"
             )
@@ -870,7 +904,8 @@ export async function promptProjectsWithDynamicUpdates(
           if (repoOrg && repoName) {
             process.stdout.write(
               createBorderedRow(
-                chalk.gray("  Repository   ") + chalk.blue(`https://github.com/${repoOrg}/${repoName}`),
+                chalk.gray("  Repository   ") +
+                  chalk.blue(`https://github.com/${repoOrg}/${repoName}`),
                 detailWidth
               ) + "\n"
             )
@@ -892,7 +927,12 @@ export async function promptProjectsWithDynamicUpdates(
 
         // Action bar with TAB navigation
         const actionsWithIcons = iconsEnabled
-          ? [`${ICONS.browser} Open Project`, `${ICONS.settings} Settings`, `${ICONS.deployments} Deployments`, `${ICONS.logs} Logs`]
+          ? [
+              `${ICONS.browser} Open Project`,
+              `${ICONS.settings} Settings`,
+              `${ICONS.deployments} Deployments`,
+              `${ICONS.logs} Logs`,
+            ]
           : ["Open Project", "Settings", "Deployments", "Logs"]
         const actionBar = actionsWithIcons
           .map((action, i) => {
@@ -904,7 +944,9 @@ export async function promptProjectsWithDynamicUpdates(
           .join("  ")
 
         eraseLine()
-        process.stdout.write(createBorderedRow(`  ${actionBar}`, detailWidth) + "\n")
+        process.stdout.write(
+          createBorderedRow(`  ${actionBar}`, detailWidth) + "\n"
+        )
         currentLine++
 
         eraseLine()
@@ -942,7 +984,9 @@ export async function promptProjectsWithDynamicUpdates(
         )
       } else {
         process.stdout.write(
-          chalk.gray(`${searchPrefix}Type to search...`) + chalk.inverse(" ") + "\n"
+          chalk.gray(`${searchPrefix}Type to search...`) +
+            chalk.inverse(" ") +
+            "\n"
         )
       }
       currentLine++
@@ -954,7 +998,7 @@ export async function promptProjectsWithDynamicUpdates(
 
       // Table header row with vertical borders
       eraseLine()
-      const headerContent = 
+      const headerContent =
         "    " +
         "Name".padEnd(35) +
         "Created".padEnd(10) +
@@ -979,7 +1023,9 @@ export async function promptProjectsWithDynamicUpdates(
         const isCursor = projectIndex === cursorIndex
 
         const prefix = isCursor ? chalk.cyan(`${INDICATORS.cursor} `) : "  "
-        const checkbox = isSelected ? chalk.green(INDICATORS.selected) : INDICATORS.unselected
+        const checkbox = isSelected
+          ? chalk.white(INDICATORS.selected)
+          : INDICATORS.unselected
         const name = isCursor
           ? chalk.cyan(project.name)
           : isSelected
@@ -1020,11 +1066,18 @@ export async function promptProjectsWithDynamicUpdates(
 
       // Footer with navigation hints (search-first interaction model)
       eraseLine()
-      const footerHints = iconsEnabled
-        ? `${ICONS.search} Type to search | ↑↓ navigate | → details | ← back | ENTER select | ^A invert | ${ICONS.delete} ^D delete | ${ICONS.refresh} ^R refresh | ${ICONS.settings} ^S settings\n`
-        : "Type to search | ↑↓ navigate | → details | ← back | ENTER select | ^A invert | ^D delete | ^R refresh | ^S settings\n"
+      let footerHints: string
+      if (iconsEnabled) {
+        footerHints =
+          `${ICONS.search} Type to search | ↑↓ navigate | → details | ← back | ENTER select\n` +
+          `^A invert | ${ICONS.delete} ^D delete | ${ICONS.refresh} ^R refresh | ${ICONS.settings} ^S settings\n`
+      } else {
+        footerHints =
+          "Type to search | ↑↓ navigate | → details | ← back | ENTER select\n" +
+          "^A invert | ^D delete | ^R refresh | ^S settings\n"
+      }
       process.stdout.write(chalk.gray(footerHints))
-      currentLine++
+      currentLine += 2
 
       // Erase remaining lines if content shrunk
       if (currentLine < lastRenderedLineCount) {
@@ -1046,6 +1099,15 @@ export async function promptProjectsWithDynamicUpdates(
         // Search by project name
         const nameMatch = project.name.toLowerCase().includes(searchTerm)
 
+        // Search by deployment state (READY, BUILDING, ERROR, CANCELED, QUEUED, INITIALIZING)
+        let stateMatch = false
+        if (project.lastDeployment?.state) {
+          stateMatch = project.lastDeployment.state.toLowerCase().includes(searchTerm)
+        } else {
+          // Match "never" for projects without deployments
+          stateMatch = "never".includes(searchTerm)
+        }
+
         // Search by creator name (username, email, or uid)
         let creatorMatch = false
         if (project.lastDeployment?.creator) {
@@ -1058,7 +1120,7 @@ export async function promptProjectsWithDynamicUpdates(
           creatorMatch = creatorName.includes(searchTerm)
         }
 
-        return nameMatch || creatorMatch
+        return nameMatch || stateMatch || creatorMatch
       })
 
       // Convert filtered projects back to ProjectOption format
@@ -1082,6 +1144,7 @@ export async function promptProjectsWithDynamicUpdates(
           ? projects[cursorIndex].value
           : null
 
+      const prevStartIndex = startIndex
       projects = [...newProjects]
 
       // Try to restore cursor position to same project ID
@@ -1106,6 +1169,11 @@ export async function promptProjectsWithDynamicUpdates(
 
       // Re-render with updated data
       render()
+
+      // Prefetch if visible projects may have changed
+      if (startIndex !== prevStartIndex) {
+        prefetchVisibleProjects()
+      }
     }
 
     /**
@@ -1140,10 +1208,56 @@ export async function promptProjectsWithDynamicUpdates(
 
       // Re-render
       render()
+
+      // Prefetch detail data for newly visible projects
+      prefetchVisibleProjects()
     }
 
     // Register the update callback
     onUpdate(updateProjects)
+
+    // Track which projects have prefetch in-flight to avoid duplicate requests
+    const prefetchInFlight = new Set<string>()
+
+    /**
+     * Prefetch detail data for visible projects (optimistic loading)
+     * Called after initial render and when visible projects change
+     */
+    const prefetchVisibleProjects = () => {
+      if (!fetchDetailData) return
+
+      const endIndex = Math.min(startIndex + pageSize, projects.length)
+      const visibleProjectIds = projects
+        .slice(startIndex, endIndex)
+        .map((p) => p.value)
+
+      for (const projectId of visibleProjectIds) {
+        const cacheKey = `${CACHE_KEY_DETAIL_VIEW}${projectId}`
+
+        // Skip if already cached or prefetch in-flight
+        if (getCached(cacheKey) || prefetchInFlight.has(projectId)) {
+          continue
+        }
+
+        // Mark as in-flight
+        prefetchInFlight.add(projectId)
+
+        // Fetch and cache in background (fire and forget)
+        fetchDetailData(projectId)
+          .then((data) => {
+            setCache(cacheKey, data)
+          })
+          .catch(() => {
+            // Silently ignore prefetch errors
+          })
+          .finally(() => {
+            prefetchInFlight.delete(projectId)
+          })
+      }
+    }
+
+    // Start prefetching for initial visible projects
+    prefetchVisibleProjects()
 
     const handleData = (chunk: Buffer) => {
       const data = chunk.toString("utf8")
@@ -1175,6 +1289,8 @@ export async function promptProjectsWithDynamicUpdates(
             cursorIndex = 0
             startIndex = 0
             render()
+            // Prefetch for restored project list
+            prefetchVisibleProjects()
             return
           }
           return
@@ -1199,7 +1315,10 @@ export async function promptProjectsWithDynamicUpdates(
 
             // Check cache first, then fetch detail data asynchronously
             const cacheKey = `${CACHE_KEY_DETAIL_VIEW}${projectId}`
-            const cachedData = getCached<{ domains: VercelDomain[]; commitMessage?: string }>(cacheKey)
+            const cachedData = getCached<{
+              domains: VercelDomain[]
+              commitMessage?: string
+            }>(cacheKey)
 
             if (cachedData) {
               // Use cached data
@@ -1248,9 +1367,14 @@ export async function promptProjectsWithDynamicUpdates(
         ) {
           // Home - go back one full page
           escapeSequence = ""
+          const prevStartIndex = startIndex
           startIndex = Math.max(0, startIndex - pageSize)
           cursorIndex = Math.min(startIndex + pageSize - 1, projects.length - 1)
           render()
+          // Prefetch if page changed
+          if (startIndex !== prevStartIndex) {
+            prefetchVisibleProjects()
+          }
           return
         }
         // Check for End: \x1b[F or \x1b[4~
@@ -1260,29 +1384,40 @@ export async function promptProjectsWithDynamicUpdates(
         ) {
           // End - go forward one full page
           escapeSequence = ""
+          const prevStartIndex = startIndex
           startIndex = Math.min(
             projects.length - pageSize,
             startIndex + pageSize
           )
           cursorIndex = Math.min(startIndex + pageSize - 1, projects.length - 1)
           render()
+          // Prefetch if page changed
+          if (startIndex !== prevStartIndex) {
+            prefetchVisibleProjects()
+          }
           return
         }
         // Check for UP arrow
         else if (fullData.length >= 3 && fullData[2] === "A") {
           // Up arrow - complete sequence
           escapeSequence = ""
+          const prevStartIndex = startIndex
           cursorIndex = Math.max(0, cursorIndex - 1)
           if (cursorIndex < startIndex) {
             startIndex = Math.max(0, startIndex - pageSize)
           }
           render()
+          // Prefetch if page changed
+          if (startIndex !== prevStartIndex) {
+            prefetchVisibleProjects()
+          }
           return
         }
         // Check for DOWN arrow
         else if (fullData.length >= 3 && fullData[2] === "B") {
           // Down arrow - complete sequence
           escapeSequence = ""
+          const prevStartIndex = startIndex
           cursorIndex = Math.min(projects.length - 1, cursorIndex + 1)
           if (cursorIndex >= startIndex + pageSize) {
             startIndex = Math.min(
@@ -1291,6 +1426,10 @@ export async function promptProjectsWithDynamicUpdates(
             )
           }
           render()
+          // Prefetch if page changed
+          if (startIndex !== prevStartIndex) {
+            prefetchVisibleProjects()
+          }
           return
         } else if (fullData.length === 2) {
           // Still building - have "\x1b[" but waiting for A/B/C/D/H/F/1/4
@@ -1396,6 +1535,8 @@ export async function promptProjectsWithDynamicUpdates(
           cursorIndex = 0
           startIndex = 0
           render()
+          // Prefetch for restored project list
+          prefetchVisibleProjects()
           return
         }
       }

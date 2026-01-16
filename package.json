@@ -1,5 +1,5 @@
 {
-  "name": "vcli",
+  "name": "@mikemajara/vcli",
   "version": "0.1.0",
   "description": "Interactive CLI for managing Vercel projects with batch actions",
   "main": "dist/index.js",
